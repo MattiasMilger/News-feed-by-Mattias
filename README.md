@@ -10,7 +10,7 @@ Libraries:
 tkinter, feedparser, webbrowser, time, json, os
 
 Feedparser is a third party library and must be installed.
-Install with pip install [library name].
+Install with pip install [library name] in command prompt.
 
 ----------------------------
 

@@ -1,10 +1,6 @@
-This application is using standard Python libraries and feedparser.
-
-----------------------------
-
 Requirements:
 
-Python 3.13 Installed
+Python 3.13 or later Installed
 
 Feedparser installed
 

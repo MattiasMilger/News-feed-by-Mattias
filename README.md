@@ -9,7 +9,7 @@ Python 3.13 Installed
 Libraries:
 tkinter, feedparser, webbrowser, time, json, os
 
-feedparser is a third party library and must be installed via pip install.
+Third party, must be installed: feedparser
 
 ----------------------------
 

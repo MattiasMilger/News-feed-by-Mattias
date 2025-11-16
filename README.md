@@ -1,13 +1,23 @@
 Requirements:
 
-Python 3.13 or later Installed
+Python 3.13
 
-Feedparser installed
+feedparser library
+
+----------------------------
+
+Preparations:
+
+Make sure Python is installed
+
+Open command line > pip install feedparser
+
+Save the files provided in the following structure
+
+Root folder: News Feed by Mattias.py
 
 ----------------------------
 
 How to Run the App:
 
-First, make sure libraries are installed by running pip install feedparser in command line.
-
-Save the entire Python code provided and run it.
+Run News Feed by Mattias.py

@@ -828,7 +828,7 @@ def setup_gui():
     load_config()
 
     ROOT = tk.Tk()
-    ROOT.title("Feedparser RSS News Viewer")
+    ROOT.title("News Feed by Mattias")
     ROOT.geometry("700x700")
     
     # Configure TTK theme

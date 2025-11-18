@@ -5,6 +5,7 @@ import webbrowser
 import time
 import json
 import os 
+import datetime 
 
 # ========================================
 # CONFIGURATION & FILE PATHS
@@ -32,6 +33,26 @@ SAVED_LISTS = {}  # Dictionary of saved feed lists
 DEFAULT_LIST_NAME = "Standard Default"  # Name of the default list to load on startup
 CURRENT_THEME = "light"  # Current theme mode: "light" or "dark"
 ROOT = None  # Reference to the main Tkinter window
+
+# --- GLOBAL VARIABLES FOR WEATHER/TIME ---
+# Permanent, user-editable list of all available locations
+DEFAULT_LOCATIONS = [
+    "Stockholm, SE", 
+    "London, UK", 
+    "New York, US", 
+    "Tokyo, JP",
+    "Berlin, DE", 
+    "Sydney, AU",
+    "Uppsala, SE", 
+    "Gothenburg, SE", 
+    "Malmö, SE",
+    "Huddinge, SE"
+]
+
+CURRENT_WEATHER_LOCATION = "Stockholm, SE" # DEFAULT to Stockholm, SE
+DATETIME_LABEL = None # Widget reference for real-time clock
+WEATHER_LABEL = None  # Widget reference for weather display
+# ---------------------------------------------
 
 # ========================================
 # THEME DEFINITIONS
@@ -89,10 +110,11 @@ THEMES = {
 
 def load_config():
     """
-    Loads saved lists, default list name, and theme preference from the config file.
-    If the config file doesn't exist, initializes with default values.
+    Loads saved lists, theme preference, and weather location data 
+    from the config file. If the config file doesn't exist, initializes with 
+    default values.
     """
-    global SAVED_LISTS, CURRENT_FEEDS, DEFAULT_LIST_NAME, CURRENT_THEME
+    global SAVED_LISTS, CURRENT_FEEDS, DEFAULT_LIST_NAME, CURRENT_THEME, CURRENT_WEATHER_LOCATION, DEFAULT_LOCATIONS
 
     if os.path.exists(CONFIG_FILE):
         try:
@@ -101,6 +123,10 @@ def load_config():
                 SAVED_LISTS = data.get("saved_lists", {})
                 DEFAULT_LIST_NAME = data.get("default_list_name", "Standard Default")
                 CURRENT_THEME = data.get("theme", "light")
+                
+                # Load the weather location preferences
+                DEFAULT_LOCATIONS = data.get("default_locations", DEFAULT_LOCATIONS) # Load permanent list
+                CURRENT_WEATHER_LOCATION = data.get("weather_location", "Stockholm, SE") # Default to Stockholm
         except json.JSONDecodeError:
             messagebox.showerror("Config Error", "Error reading or parsing the config file. Using default settings.")
     
@@ -116,14 +142,17 @@ def load_config():
 
 def save_config():
     """
-    Saves the current state of lists, default list name, and theme to the config file.
+    Saves the current state of lists, theme, and weather location data 
+    to the config file.
     """
-    global SAVED_LISTS, DEFAULT_LIST_NAME, CURRENT_THEME
+    global SAVED_LISTS, DEFAULT_LIST_NAME, CURRENT_THEME, CURRENT_WEATHER_LOCATION, DEFAULT_LOCATIONS
 
     data = {
         "saved_lists": SAVED_LISTS,
         "default_list_name": DEFAULT_LIST_NAME,
-        "theme": CURRENT_THEME
+        "theme": CURRENT_THEME,
+        "weather_location": CURRENT_WEATHER_LOCATION, # Save current location
+        "default_locations": DEFAULT_LOCATIONS # Save the permanent list
     }
     try:
         with open(CONFIG_FILE, 'w') as f:
@@ -164,17 +193,17 @@ def configure_ttk_theme():
     # Map button states for hover and press
     style.map("TButton",
               background=[('active', theme["button_active_bg"]),
-                         ('pressed', theme["button_active_bg"]),
-                         ('!active', theme["button_bg"])],
-              foreground=[('active', theme["button_fg"]),
-                         ('pressed', theme["button_fg"]),
-                         ('!active', theme["button_fg"])],
-              bordercolor=[('active', theme["button_active_bg"]),
+                          ('pressed', theme["button_active_bg"]),
                           ('!active', theme["button_bg"])],
+              foreground=[('active', theme["button_fg"]),
+                          ('pressed', theme["button_fg"]),
+                          ('!active', theme["button_fg"])],
+              bordercolor=[('active', theme["button_active_bg"]),
+                           ('!active', theme["button_bg"])],
               darkcolor=[('active', theme["button_active_bg"]),
-                        ('!active', theme["button_bg"])],
+                         ('!active', theme["button_bg"])],
               lightcolor=[('active', theme["button_active_bg"]),
-                         ('!active', theme["button_bg"])])
+                          ('!active', theme["button_bg"])])
     
     # Configure TFrame style
     style.configure("TFrame",
@@ -198,7 +227,7 @@ def configure_ttk_theme():
     
     style.map("Vertical.TScrollbar",
               background=[('active', theme["button_active_bg"]),
-                         ('!active', theme["frame_bg"])])
+                          ('!active', theme["frame_bg"])])
 
 def apply_theme_to_widget(widget):
     """
@@ -289,7 +318,7 @@ def apply_theme():
     Applies the current theme to all widgets in the application.
     Updates colors for the main window, canvas, frames, and all child widgets.
     """
-    global ROOT
+    global ROOT, DATETIME_LABEL, WEATHER_LABEL
     
     if ROOT is None:
         return
@@ -311,6 +340,11 @@ def apply_theme():
     
     # Apply theme to all widgets recursively
     apply_theme_to_widget(ROOT)
+
+    # Manually update Date/Time/Weather labels if they exist
+    if DATETIME_LABEL and WEATHER_LABEL:
+        update_datetime_label()
+        update_weather_display()
 
 def toggle_theme(button_frame, scrollable_frame):
     """
@@ -336,7 +370,260 @@ def toggle_theme(button_frame, scrollable_frame):
     update_category_buttons(button_frame, scrollable_frame)
 
 # ========================================
-# RSS FETCHING LOGIC
+# DATE/TIME AND WEATHER FUNCTIONS
+# ========================================
+
+def update_datetime_label():
+    """Updates the DATETIME_LABEL with the current date and time (real-time)."""
+    global DATETIME_LABEL
+    theme = THEMES[CURRENT_THEME]
+    
+    if DATETIME_LABEL:
+        current_time = datetime.datetime.now().strftime("%A, %B %d, %Y | %H:%M:%S")
+        DATETIME_LABEL.config(
+            text=current_time,
+            bg=theme["frame_bg"],
+            fg=theme["fg"]
+        )
+    
+    # Schedule the next update after 1000 milliseconds (1 second)
+    if ROOT:
+        ROOT.after(1000, update_datetime_label)
+
+def fetch_weather(location):
+    """
+    Mocks fetching weather data for a given location.
+    
+    NOTE: Replace this function with actual API calls to a weather service.
+    
+    Args:
+        location (str): The selected city/location (e.g., "Stockholm, SE")
+        
+    Returns:
+        str: A formatted weather string or an error message.
+    """
+    if location == "No Location":
+        return "Not Set"
+
+    # Mock data based on location (Expanded for examples)
+    weather_data = {
+        "Stockholm, SE": "1°C ❄️ | Light Snow",
+        "London, UK": "9°C ☁️ | Overcast",
+        "New York, US": "12°C ☀️ | Clear",
+        "Tokyo, JP": "15°C 🌧️ | Rain Showers",
+        "Berlin, DE": "6°C 🌥️ | Partly Cloudy",
+        "Sydney, AU": "25°C ☀️ | Sunny",
+        "Uppsala, SE": "0°C 🌨️ | Flurries",
+        "Gothenburg, SE": "2°C 🌫️ | Fog",
+        "Malmö, SE": "4°C ☁️ | Cloudy",
+        "Huddinge, SE": "1°C ❄️ | Light Snow"
+    }
+    
+    # Return mock data or a default if location is missing
+    return weather_data.get(location, "N/A - Custom Location")
+
+def update_weather_display():
+    """Updates the WEATHER_LABEL with weather for the CURRENT_WEATHER_LOCATION."""
+    global WEATHER_LABEL, CURRENT_WEATHER_LOCATION
+    theme = THEMES[CURRENT_THEME]
+    
+    if WEATHER_LABEL:
+        weather_info = fetch_weather(CURRENT_WEATHER_LOCATION)
+        
+        display_text = f"📍 {CURRENT_WEATHER_LOCATION}: {weather_info}"
+
+        WEATHER_LABEL.config(
+            text=display_text,
+            bg=theme["frame_bg"],
+            fg=theme["fg"]
+        )
+
+def change_weather_location(new_location, top_level=None):
+    """
+    Handles the change of the weather location, saves it, and updates display.
+    
+    Args:
+        new_location (str): The new location selected or entered.
+        top_level (tk.Toplevel, optional): The settings window to close.
+    """
+    global CURRENT_WEATHER_LOCATION
+    CURRENT_WEATHER_LOCATION = new_location
+    save_config()
+    update_weather_display()
+    if top_level:
+        top_level.destroy()
+
+# ========================================
+# LOCATION MANAGEMENT FUNCTIONS
+# ========================================
+
+def add_new_location_dialog(listbox, manager_root):
+    """
+    Opens a dialog to add a new location with a format viability check.
+    """
+    global DEFAULT_LOCATIONS
+    
+    new_loc = simpledialog.askstring(
+        "Add New Location", 
+        "Enter new location in 'City, CC' format (e.g., Paris, FR):", 
+        parent=manager_root
+    )
+
+    if not new_loc:
+        return
+
+    new_loc = new_loc.strip()
+
+    # --- Viability Check (City, CC format) ---
+    parts = new_loc.split(',')
+    
+    # Check 1: Must have exactly one comma
+    if len(parts) != 2:
+        messagebox.showwarning("Format Error", "Location must be in 'City, CC' format (e.g., Paris, FR). Missing or extra comma.")
+        return
+
+    city = parts[0].strip()
+    cc = parts[1].strip()
+
+    # Check 2: City part is not empty, CC part is exactly 2 characters
+    if not city or len(cc) != 2 or not cc.isalpha():
+        messagebox.showwarning("Format Error", "Location must be in 'City, CC' format (e.g., London, UK). CC should be a 2-letter country code.")
+        return
+
+    # Check 3: Uniqueness
+    if new_loc in DEFAULT_LOCATIONS:
+        messagebox.showwarning("Duplicate", f"'{new_loc}' is already in the list.")
+        return
+        
+    # Add and save
+    DEFAULT_LOCATIONS.append(new_loc)
+    DEFAULT_LOCATIONS.sort() # Keep the list clean
+    save_config()
+    
+    # Refresh listbox and maintain selection focus if possible
+    populate_location_listbox(listbox)
+    
+    messagebox.showinfo("Success", f"Location '{new_loc}' added and saved.")
+
+
+def populate_location_listbox(listbox):
+    """Populates the listbox with the DEFAULT_LOCATIONS and highlights the active one."""
+    global CURRENT_WEATHER_LOCATION, DEFAULT_LOCATIONS
+    theme = THEMES[CURRENT_THEME]
+    
+    listbox.delete(0, tk.END)
+    
+    # Ensure DEFAULT_LOCATIONS is sorted
+    DEFAULT_LOCATIONS.sort()
+    
+    selected_index = -1
+    for i, loc in enumerate(DEFAULT_LOCATIONS):
+        listbox.insert(tk.END, loc)
+        if loc == CURRENT_WEATHER_LOCATION:
+            listbox.itemconfig(i, {'bg': theme["button_active_bg"], 
+                                   'fg': theme["fg"]})
+            selected_index = i
+            
+    if selected_index != -1:
+        # Ensure the selected item is visible and highlighted
+        listbox.selection_set(selected_index)
+        listbox.see(selected_index)
+
+
+def location_manager_window():
+    """
+    Creates a Toplevel window for managing the weather location using a selectable list.
+    """
+    global CURRENT_WEATHER_LOCATION, DEFAULT_LOCATIONS
+    theme = THEMES[CURRENT_THEME]
+    
+    manager_root = tk.Toplevel(ROOT)
+    manager_root.title("Weather Location Settings")
+    manager_root.geometry("400x350")
+    manager_root.configure(bg=theme["bg"])
+    manager_root.grab_set() 
+
+    frame = tk.Frame(manager_root, bg=theme["frame_bg"], padx=15, pady=15)
+    frame.pack(fill='both', expand=True)
+
+    # Header
+    tk.Label(
+        frame, 
+        text="📍 Select or Add a Weather Location", 
+        font=("Arial", 11, "bold"),
+        bg=theme["frame_bg"],
+        fg=theme["headline_fg"]
+    ).pack(fill='x', pady=(0, 5))
+    
+    # 1. Listbox Setup
+    listbox_frame = tk.Frame(frame, bg=theme["frame_bg"])
+    listbox_frame.pack(fill='both', expand=True, pady=5)
+    
+    listbox_scrollbar = tk.Scrollbar(listbox_frame)
+    location_listbox = tk.Listbox(
+        listbox_frame, 
+        yscrollcommand=listbox_scrollbar.set, 
+        selectmode=tk.SINGLE,
+        bg=theme["listbox_bg"],
+        fg=theme["listbox_fg"],
+        selectbackground=theme["button_active_bg"],
+        selectforeground=theme["fg"],
+        highlightthickness=0
+    )
+    listbox_scrollbar.config(command=location_listbox.yview)
+    
+    listbox_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    location_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    
+    # Populate the list and highlight active location
+    populate_location_listbox(location_listbox)
+
+
+    # 2. Control Buttons
+    button_controls = tk.Frame(frame, bg=theme["frame_bg"])
+    button_controls.pack(fill='x', pady=(10, 5))
+    
+    def set_selected_location():
+        """Sets the selected listbox item as the new weather location."""
+        try:
+            selection_index = location_listbox.curselection()[0]
+            new_loc = location_listbox.get(selection_index)
+            # Use the existing change function, passing the manager_root to close it
+            change_weather_location(new_loc, manager_root)
+        except IndexError:
+            messagebox.showwarning("Selection Error", "Please select a location from the list.")
+
+    ttk.Button(
+        button_controls, 
+        text="Set Active Location", 
+        command=set_selected_location
+    ).pack(side='left', expand=True, padx=5)
+    
+    ttk.Button(
+        button_controls, 
+        text="Add New Location...", 
+        command=lambda: add_new_location_dialog(location_listbox, manager_root)
+    ).pack(side='right', expand=True, padx=5)
+
+    # 3. Footer Note (for context on mock data)
+    ttk.Separator(frame, orient='horizontal').pack(fill='x', pady=(5, 5))
+    tk.Label(
+        frame,
+        text="Note: Weather data is mocked. Only listed locations return detailed results. Newly added locations will return 'N/A - Custom Location'.",
+        wraplength=350,
+        font=("Arial", 8, "italic"),
+        bg=theme["frame_bg"],
+        fg=theme["summary_fg"]
+    ).pack(fill='x')
+    
+    
+    # Apply theme to the new window
+    apply_theme_to_widget(manager_root)
+    manager_root.protocol("WM_DELETE_WINDOW", manager_root.destroy)
+    manager_root.update_idletasks() # Ensure geometry updates before returning
+
+# ========================================
+# RSS FETCHING LOGIC 
 # ========================================
 
 def fetch_and_display_news(feed_url, container, category_name):
@@ -439,10 +726,10 @@ def fetch_and_display_news(feed_url, container, category_name):
     except Exception as e:
         messagebox.showerror("Fetching Error", f"An error occurred while fetching the RSS feed:\n{e}")
     finally:
-        time.sleep(0.1)  # Brief pause to allow UI updates
+        time.sleep(0.1) # Brief pause to allow UI updates
 
 # ========================================
-# GUI MANAGEMENT FUNCTIONS
+# GUI MANAGEMENT FUNCTIONS 
 # ========================================
 
 def update_category_buttons(button_frame, scrollable_frame):
@@ -646,7 +933,7 @@ def show_saved_lists_window(button_frame, scrollable_frame):
     apply_theme_to_widget(saved_root)
 
 # ========================================
-# HELPER FUNCTIONS FOR FEED MANAGEMENT
+# HELPER FUNCTIONS FOR FEED MANAGEMENT 
 # ========================================
 
 def add_feed(refresh_listbox, button_frame, scrollable_frame):
@@ -750,7 +1037,7 @@ def load_list(listbox, refresh_saved_listbox, button_frame, scrollable_frame, sa
                 messagebox.showinfo("List Loaded", f"Successfully loaded list: '{list_name}'.")
                 saved_root.destroy()
         else:
-             messagebox.showwarning("Error", "The selected list was not found.")
+              messagebox.showwarning("Error", "The selected list was not found.")
     except IndexError:
         messagebox.showwarning("Warning", "Please select a list to load.")
 
@@ -820,9 +1107,10 @@ def delete_list(listbox, refresh_saved_listbox):
 def setup_gui():
     """
     Sets up the main Tkinter window and all widgets.
-    Creates the menu bar with File and Style menus, category buttons, and scrollable content area.
+    Creates the menu bar with File, Style, and Location menus, category buttons, 
+    date/time/weather display, and scrollable content area.
     """
-    global ROOT 
+    global ROOT, DATETIME_LABEL, WEATHER_LABEL
     
     # Load configuration and theme preferences
     load_config()
@@ -835,10 +1123,38 @@ def setup_gui():
     configure_ttk_theme()
     
     # ========================================
+    # TOP HEADER FRAME (Date, Time, Weather)
+    # ========================================
+    theme = THEMES[CURRENT_THEME]
+    
+    header_frame = tk.Frame(ROOT, bg=theme["frame_bg"], padx=10, pady=5)
+    header_frame.pack(fill='x', padx=10, pady=(10, 0))
+
+    # 1. Date/Time Label
+    DATETIME_LABEL = tk.Label(
+        header_frame, 
+        text="", 
+        font=("Arial", 10, "bold"), 
+        bg=theme["frame_bg"],
+        fg=theme["fg"]
+    )
+    DATETIME_LABEL.pack(side='left', padx=(0, 20))
+    update_datetime_label() # Start the real-time clock
+
+    # 2. Weather Display Label 
+    WEATHER_LABEL = tk.Label(
+        header_frame, 
+        text="Loading weather...", 
+        font=("Arial", 10, "italic"),
+        bg=theme["frame_bg"],
+        fg=theme["fg"]
+    )
+    WEATHER_LABEL.pack(side='right', padx=10)
+    update_weather_display() # Display initial weather
+
+    # ========================================
     # MENU BAR SETUP
     # ========================================
-    
-    theme = THEMES[CURRENT_THEME]
     
     menubar = tk.Menu(ROOT, bg=theme["menu_bg"], fg=theme["menu_fg"])
     ROOT.config(menu=menubar)
@@ -851,9 +1167,9 @@ def setup_gui():
 
     # File Menu - For feed list management
     file_menu = tk.Menu(menubar, tearoff=0, bg=theme["menu_bg"], 
-                    fg=theme["menu_fg"], 
-                    activebackground=theme["menu_active_bg"], 
-                    activeforeground=theme["menu_fg"])
+                     fg=theme["menu_fg"], 
+                     activebackground=theme["menu_active_bg"], 
+                     activeforeground=theme["menu_fg"])
     menubar.add_cascade(label="File", menu=file_menu)
     
     file_menu.add_command(label="Save Current List...", command=lambda: save_current_list())
@@ -865,12 +1181,23 @@ def setup_gui():
     file_menu.add_separator()
     file_menu.add_command(label="Exit", command=ROOT.quit)
 
+    # Location Menu 
+    location_menu = tk.Menu(menubar, tearoff=0, 
+                          bg=theme["menu_bg"], 
+                          fg=theme["menu_fg"], 
+                          activebackground=theme["menu_active_bg"], 
+                          activeforeground=theme["menu_fg"])
+    menubar.add_cascade(label="Location", menu=location_menu)
+    
+    location_menu.add_command(label="Change Weather Location...", 
+                              command=location_manager_window) # Opens the new window
+    
     # Style Menu - For theme switching
     style_menu = tk.Menu(menubar, tearoff=0, 
-                        bg=theme["menu_bg"], 
-                        fg=theme["menu_fg"], 
-                        activebackground=theme["menu_active_bg"], 
-                        activeforeground=theme["menu_fg"])
+                          bg=theme["menu_bg"], 
+                          fg=theme["menu_fg"], 
+                          activebackground=theme["menu_active_bg"], 
+                          activeforeground=theme["menu_fg"])
     menubar.add_cascade(label="Style", menu=style_menu)
     
     style_menu.add_command(label="Toggle Dark/Light Mode", 
@@ -881,7 +1208,7 @@ def setup_gui():
     # ========================================
 
     # Button frame for category buttons
-    button_frame.pack(fill='x', padx=10, pady=(10, 5))
+    button_frame.pack(fill='x', padx=10, pady=(5, 5))
     
     # Main content frame with scrollbar
     main_frame.pack(fill='both', expand=True, padx=10)
@@ -901,16 +1228,14 @@ def setup_gui():
 
     canvas.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
-    
-    # Apply the saved theme and populate the interface
-    apply_theme()
+
+    # Initial update of category buttons and content
     update_category_buttons(button_frame, scrollable_frame)
+
+    # Apply theme fully to ensure all new widgets are colored correctly
+    apply_theme()
     
     ROOT.mainloop()
 
-# ========================================
-# APPLICATION ENTRY POINT
-# ========================================
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     setup_gui()

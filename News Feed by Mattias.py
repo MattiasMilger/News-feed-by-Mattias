@@ -20,7 +20,7 @@ CONFIG_FILE = "rss_config.json"
 
 DEFAULT_FEEDS = {
     "Technology": "https://www.theverge.com/rss/index.xml",
-    "Finance": "https://www.nytimes.com/services/xml/rss/nyt/World.xml",
+    "Finance": "https://www.valuewalk.com/feed",
     "World": "http://feeds.bbci.co.uk/news/world/rss.xml"
 }
 
@@ -53,6 +53,18 @@ CURRENT_WEATHER_LOCATION = "Stockholm, SE" # DEFAULT to Stockholm, SE
 DATETIME_LABEL = None # Widget reference for real-time clock
 WEATHER_LABEL = None  # Widget reference for weather display
 # ---------------------------------------------
+
+# --- GLOBAL VARIABLES FOR AUTOMATIC REFRESH ---
+ACTIVE_FEED_URL = None
+ACTIVE_FEED_CONTAINER = None
+REFRESH_INTERVAL_MS = 300000 # 5 minutes (300,000 ms) 
+# ----------------------------------------------
+# --- GLOBAL VARIABLES FOR PAGINATION ---
+ALL_ARTICLES = {} # {feed_url: [list of up to 100 article entries]}
+CURRENT_PAGE = 1
+ARTICLES_PER_PAGE = 12 # Number of articles to show per page
+# ---------------------------------------------
+
 
 # ========================================
 # THEME DEFINITIONS
@@ -204,6 +216,21 @@ def configure_ttk_theme():
                          ('!active', theme["button_bg"])],
               lightcolor=[('active', theme["button_active_bg"]),
                           ('!active', theme["button_bg"])])
+    
+    # Configure style for active page button (used in pagination)
+    style.configure("Active.TButton", 
+                    background=theme["headline_fg"],
+                    foreground=theme["bg"], 
+                    bordercolor=theme["headline_fg"])
+
+    # Map button states for hover and press on active button
+    style.map("Active.TButton",
+              background=[('active', theme["headline_fg"]),
+                          ('pressed', theme["headline_fg"]),
+                          ('!active', theme["headline_fg"])],
+              foreground=[('active', theme["bg"]),
+                          ('pressed', theme["bg"]),
+                          ('!active', theme["bg"])])
     
     # Configure TFrame style
     style.configure("TFrame",
@@ -454,6 +481,69 @@ def change_weather_location(new_location, top_level=None):
         top_level.destroy()
 
 # ========================================
+# PERIODIC REFRESH FUNCTION 
+# ========================================
+
+def periodic_refresh(manual=False):
+    """
+    Checks if an active feed is set and automatically refreshes its content 
+    to ensure non-intrusive, periodic updates. Schedules the next refresh.
+    
+    Args:
+        manual (bool): If True, it was triggered by the button and displays a 
+                       confirmation/error message.
+    """
+    global ROOT, ACTIVE_FEED_URL, ACTIVE_FEED_CONTAINER, CURRENT_FEEDS, REFRESH_INTERVAL_MS, CURRENT_PAGE, ALL_ARTICLES
+    
+    if ACTIVE_FEED_URL and ACTIVE_FEED_CONTAINER and ACTIVE_FEED_CONTAINER.winfo_exists():
+        # Find the category name corresponding to the URL
+        category_name = "Refreshed Feed" # Default name
+        for name, url in CURRENT_FEEDS.items():
+            if url == ACTIVE_FEED_URL:
+                category_name = name
+                break
+        
+        # 1. Re-fetch and store all articles (like in fetch_and_display_news)
+        try:
+            feed = feedparser.parse(ACTIVE_FEED_URL, request_headers={'User-Agent': 'NewsViewerApp/1.0'})
+            
+            # Check for parsing errors
+            if feed.bozo and feed.bozo_exception.__class__.__name__ not in ('NonXMLContentType', 'CharacterEncodingOverride'):
+                if manual:
+                    messagebox.showerror("Refresh Error", f"Could not refresh feed for **{category_name}** due to a formatting error.")
+                return
+            
+            # Store latest entries
+            ALL_ARTICLES[ACTIVE_FEED_URL] = feed.entries[:100]
+            
+            # 2. Call display_page using the CURRENT_PAGE to maintain user's position
+            # Ensure current page is valid after a refresh (e.g. if articles dropped below current page)
+            total_articles = len(ALL_ARTICLES[ACTIVE_FEED_URL])
+            total_pages = (total_articles + ARTICLES_PER_PAGE - 1) // ARTICLES_PER_PAGE
+            safe_page = min(CURRENT_PAGE, max(1, total_pages))
+            
+            display_page(ACTIVE_FEED_CONTAINER, category_name, ACTIVE_FEED_URL, safe_page)
+            
+            if manual:
+                 messagebox.showinfo("Refresh Successful", f"The '{category_name}' feed has been refreshed.")
+
+        except Exception as e:
+            if manual:
+                messagebox.showerror("Refresh Error", f"An error occurred while refreshing the RSS feed:\n{e}")
+            # Do nothing silently for automatic refresh errors
+            pass 
+        
+    elif manual:
+        # If manual refresh is called but no feed is active, inform user
+        messagebox.showinfo("Refresh", "No news category is currently displayed to refresh.")
+
+    
+    # Schedule the next refresh only if it wasn't a manual call
+    if not manual and ROOT:
+        ROOT.after(REFRESH_INTERVAL_MS, periodic_refresh)
+
+
+# ========================================
 # LOCATION MANAGEMENT FUNCTIONS
 # ========================================
 
@@ -538,7 +628,8 @@ def location_manager_window():
     theme = THEMES[CURRENT_THEME]
     
     manager_root = tk.Toplevel(ROOT)
-    manager_root.title("Weather Location Settings")
+    # UPDATED: Window title
+    manager_root.title("Location Settings")
     manager_root.geometry("400x350")
     manager_root.configure(bg=theme["bg"])
     manager_root.grab_set() 
@@ -549,7 +640,8 @@ def location_manager_window():
     # Header
     tk.Label(
         frame, 
-        text="📍 Select or Add a Weather Location", 
+        # UPDATED: Header text
+        text="📍 Select or Add a Location", 
         font=("Arial", 11, "bold"),
         bg=theme["frame_bg"],
         fg=theme["headline_fg"]
@@ -623,12 +715,185 @@ def location_manager_window():
     manager_root.update_idletasks() # Ensure geometry updates before returning
 
 # ========================================
-# RSS FETCHING LOGIC 
+# PAGINATION CORE LOGIC
+# ========================================
+
+def display_page(container, category_name, feed_url, page_number):
+    """
+    Displays the articles for a specific page number, including navigation.
+    
+    Args:
+        container: The widget container to display news in.
+        category_name: The name of the category.
+        feed_url: The URL of the feed.
+        page_number: The page number to display.
+    """
+    global ALL_ARTICLES, CURRENT_PAGE, ARTICLES_PER_PAGE, ROOT
+    theme = THEMES[CURRENT_THEME]
+    
+    # 1. Update Global State
+    CURRENT_PAGE = page_number
+    
+    # 2. Clear existing content (important for redraw)
+    # The loading label is destroyed here if present (when called on successful fetch)
+    for widget in container.winfo_children():
+        widget.destroy()
+
+    # Get the articles for the current feed
+    entries = ALL_ARTICLES.get(feed_url, [])
+    total_articles = len(entries)
+    # Calculate total pages, ensuring at least 1 page if articles exist
+    total_pages = (total_articles + ARTICLES_PER_PAGE - 1) // ARTICLES_PER_PAGE
+    total_pages = max(1, total_pages) if total_articles > 0 else 0
+    
+    # Ensure page number is within bounds
+    if total_pages > 0:
+        if page_number < 1: page_number = 1
+        if page_number > total_pages: page_number = total_pages
+    else:
+        page_number = 1
+        
+    CURRENT_PAGE = page_number # Re-set global for safety
+
+    # 3. Calculate indices
+    start_index = (page_number - 1) * ARTICLES_PER_PAGE
+    end_index = start_index + ARTICLES_PER_PAGE
+    
+    entries_to_display = entries[start_index:end_index]
+    
+    # 4. Display Header
+    page_text = f" (Page {CURRENT_PAGE} of {total_pages})" if total_pages > 1 else ""
+    header_label = tk.Label(
+        container, 
+        text=f"--- Latest {category_name} Headlines{page_text} ---", 
+        font=("Arial", 12, "bold"), 
+        foreground=theme["category_fg"],
+        background=theme["frame_bg"]
+    )
+    header_label.pack(pady=(10, 5), padx=10, fill='x')
+
+    # Handle empty or zero-page scenario
+    if not entries_to_display and total_articles == 0:
+        error_label = tk.Label(
+            container, 
+            text="No news entries found for this feed.", 
+            foreground=theme["error_fg"],
+            background=theme["frame_bg"]
+        )
+        error_label.pack(pady=10)
+        
+    # 5. Display Entries
+    for entry in entries_to_display:
+        # Extract entry information
+        headline = entry.get('title', 'No Title Available')
+        link = entry.get('link', '#')
+        
+        # Create a brief summary from the description
+        summary_text = entry.get('summary', entry.get('description', ''))
+        summary = summary_text.split('.')[0] + '...' if summary_text else ''
+        
+        # Create clickable headline
+        headline_label = tk.Label(
+            container, 
+            text=headline, 
+            wraplength=550, 
+            font=("Arial", 10, "bold"), 
+            cursor="hand2", 
+            foreground=theme["headline_fg"],
+            background=theme["frame_bg"],
+            anchor='w',
+            justify='left'
+        )
+        headline_label.pack(anchor='w', padx=15, pady=(5, 0), fill='x')
+        
+        # Display summary text
+        summary_label = tk.Label(
+            container, 
+            text=summary, 
+            wraplength=550, 
+            font=("Arial", 9, "italic"), 
+            foreground=theme["summary_fg"],
+            background=theme["frame_bg"],
+            anchor='w',
+            justify='left'
+        )
+        summary_label.pack(anchor='w', padx=15, pady=(0, 2), fill='x')
+        
+        # Bind click event to open link in browser
+        headline_label.bind("<Button-1>", lambda e, l=link: webbrowser.open_new(l)) 
+        
+        # Add separator between entries
+        sep_frame = tk.Frame(container, height=1, bg=theme["separator_bg"])
+        sep_frame.pack(fill='x', padx=10, pady=2)
+            
+    # 6. Add Navigation Controls (only if more than one page)
+    if total_pages > 1:
+        nav_frame = tk.Frame(container, bg=theme["frame_bg"], pady=10)
+        nav_frame.pack(fill='x', padx=10)
+        
+        # --- Previous Button ---
+        prev_button = ttk.Button(
+            nav_frame, 
+            text="← Previous Page", 
+            command=lambda: display_page(container, category_name, feed_url, page_number - 1)
+        )
+        prev_button.pack(side='left', padx=10)
+        if page_number == 1:
+            prev_button.state(['disabled'])
+
+        # --- Page Number Buttons Logic ---
+        MAX_BUTTONS = 5
+        
+        if total_pages <= MAX_BUTTONS:
+            start_page = 1
+            end_page = total_pages
+        else:
+            # Calculate range centered around current page
+            start_page = max(1, page_number - (MAX_BUTTONS // 2))
+            end_page = min(total_pages, start_page + MAX_BUTTONS - 1)
+            
+            # Adjust start_page if end_page hits total_pages boundary
+            if end_page - start_page < MAX_BUTTONS - 1:
+                start_page = max(1, total_pages - MAX_BUTTONS + 1)
+        
+        # Display page number buttons
+        for i in range(start_page, end_page + 1):
+            btn_style = "Active.TButton" if i == page_number else "TButton"
+            btn = ttk.Button(
+                nav_frame,
+                text=str(i),
+                command=lambda p=i: display_page(container, category_name, feed_url, p),
+                style=btn_style # Use the custom style
+            )
+            btn.pack(side='left', padx=2)
+            
+
+        # --- Next Button ---
+        next_button = ttk.Button(
+            nav_frame, 
+            text="Next Page →", 
+            command=lambda: display_page(container, category_name, feed_url, page_number + 1)
+        )
+        next_button.pack(side='right', padx=10)
+        if page_number == total_pages:
+            next_button.state(['disabled'])
+            
+    # Force the canvas to update its scroll region after drawing all widgets
+    if ROOT:
+        # Schedule the update to happen after the current set of widgets have been fully created
+        ROOT.after(50, lambda: container.master.configure(scrollregion=container.master.bbox("all")))
+        
+    # Apply theme to the new controls
+    apply_theme_to_widget(container)
+
+# ========================================
+# RSS FETCHING LOGIC
 # ========================================
 
 def fetch_and_display_news(feed_url, container, category_name):
     """
-    Fetches, parses, and displays news from an RSS feed.
+    Fetches, parses, and *stores* all news entries from an RSS feed, 
+    then calls display_page to show the first page.
     
     Args:
         feed_url: The URL of the RSS feed to fetch
@@ -637,96 +902,55 @@ def fetch_and_display_news(feed_url, container, category_name):
     """
     theme = THEMES[CURRENT_THEME]
     
-    # Clear existing content
+    # Track the currently active feed for automatic refresh
+    global ACTIVE_FEED_URL, ACTIVE_FEED_CONTAINER, CURRENT_PAGE, ALL_ARTICLES
+    ACTIVE_FEED_URL = feed_url
+    ACTIVE_FEED_CONTAINER = container
+    
+    # Clear existing content immediately for responsiveness
     for widget in container.winfo_children():
         widget.destroy()
 
-    # Display category header
-    header_label = tk.Label(
+    # Display a loading message
+    loading_label = tk.Label(
         container, 
-        text=f"--- Latest {category_name} Headlines ---", 
-        font=("Arial", 12, "bold"), 
-        foreground=theme["category_fg"],
+        text="Fetching news... please wait.", 
+        font=("Arial", 12, "italic"),
+        foreground=theme["summary_fg"],
         background=theme["frame_bg"]
     )
-    header_label.pack(pady=(10, 5), padx=10, fill='x')
-
+    loading_label.pack(pady=50)
+    
+    # Process the fetch in a try/except/finally block
     try:
         # Fetch and parse the RSS feed
         feed = feedparser.parse(feed_url, request_headers={'User-Agent': 'NewsViewerApp/1.0'})
         
-        # Check for parsing errors (excluding minor issues)
+        # Check for parsing errors
         if feed.bozo and feed.bozo_exception.__class__.__name__ not in ('NonXMLContentType', 'CharacterEncodingOverride'):
              messagebox.showerror("Feed Error", f"Could not parse feed for **{category_name}** due to a formatting error.")
+             # Clear the loading label on error
+             loading_label.destroy()
              return
 
-        entries = feed.entries
+        # Store ALL entries (or a reasonable limit, e.g., 100)
+        ALL_ARTICLES[feed_url] = feed.entries[:100] # Cap to 100 entries max
         
-        # Handle empty feeds
-        if not entries:
-            error_label = tk.Label(
-                container, 
-                text="No news entries found in the feed.", 
-                foreground=theme["error_fg"],
-                background=theme["frame_bg"]
-            )
-            error_label.pack(pady=10)
-            return
-
-        # Display up to 15 entries
-        count = 0
-        for entry in entries:
-            if count >= 15:
-                break
-            
-            # Extract entry information
-            headline = entry.get('title', 'No Title Available')
-            link = entry.get('link', '#')
-            
-            # Create a brief summary from the description
-            summary_text = entry.get('summary', entry.get('description', ''))
-            summary = summary_text.split('.')[0] + '...' if summary_text else ''
-            
-            # Create clickable headline
-            headline_label = tk.Label(
-                container, 
-                text=headline, 
-                wraplength=550, 
-                font=("Arial", 10, "bold"), 
-                cursor="hand2", 
-                foreground=theme["headline_fg"],
-                background=theme["frame_bg"],
-                anchor='w',
-                justify='left'
-            )
-            headline_label.pack(anchor='w', padx=15, pady=(5, 0), fill='x')
-            
-            # Display summary text
-            summary_label = tk.Label(
-                container, 
-                text=summary, 
-                wraplength=550, 
-                font=("Arial", 9, "italic"), 
-                foreground=theme["summary_fg"],
-                background=theme["frame_bg"],
-                anchor='w',
-                justify='left'
-            )
-            summary_label.pack(anchor='w', padx=15, pady=(0, 2), fill='x')
-            
-            # Bind click event to open link in browser
-            headline_label.bind("<Button-1>", lambda e, l=link: webbrowser.open_new(l)) 
-            
-            # Add separator between entries
-            sep_frame = tk.Frame(container, height=1, bg=theme["separator_bg"])
-            sep_frame.pack(fill='x', padx=10, pady=2)
-            
-            count += 1
-            
+        # Reset to page 1 for the new feed and display
+        CURRENT_PAGE = 1
+        display_page(container, category_name, feed_url, CURRENT_PAGE)
+        
     except Exception as e:
+        # Clear loading message and display error
+        for widget in container.winfo_children():
+            widget.destroy()
+            
         messagebox.showerror("Fetching Error", f"An error occurred while fetching the RSS feed:\n{e}")
+    
     finally:
-        time.sleep(0.1) # Brief pause to allow UI updates
+        # A brief pause to allow UI updates regardless of success or failure.
+        time.sleep(0.1) 
+
 
 # ========================================
 # GUI MANAGEMENT FUNCTIONS 
@@ -767,6 +991,7 @@ def update_category_buttons(button_frame, scrollable_frame):
 
     # Create a button for each feed category
     for name, url in CURRENT_FEEDS.items():
+        # When a button is clicked, it now calls the updated fetch_and_display_news
         button = ttk.Button(
             button_frame, 
             text=name, 
@@ -776,14 +1001,19 @@ def update_category_buttons(button_frame, scrollable_frame):
 
     # Automatically load the first category
     if CURRENT_FEEDS:
-        initial_category_url = list(CURRENT_FEEDS.values())[0]
-        initial_category_name = list(CURRENT_FEEDS.keys())[0]
-        fetch_and_display_news(initial_category_url, scrollable_frame, initial_category_name)
+        # Only load if the previous active feed is no longer valid (e.g., if it was deleted/edited)
+        is_active_feed_valid = ACTIVE_FEED_URL in CURRENT_FEEDS.values()
+        
+        if not is_active_feed_valid:
+            initial_category_url = list(CURRENT_FEEDS.values())[0]
+            initial_category_name = list(CURRENT_FEEDS.keys())[0]
+            fetch_and_display_news(initial_category_url, scrollable_frame, initial_category_name)
+
 
 def feed_manager_window(button_frame, scrollable_frame):
     """
     Creates a Toplevel window for managing the currently active feed list.
-    Allows users to add or remove feeds from the current list.
+    Allows users to add, remove, or edit feeds from the current list.
     
     Args:
         button_frame: The frame containing category buttons
@@ -793,7 +1023,7 @@ def feed_manager_window(button_frame, scrollable_frame):
     
     manager_root = tk.Toplevel(ROOT)
     manager_root.title("Manage Current RSS Feeds")
-    manager_root.geometry("500x300")
+    manager_root.geometry("600x300")
     manager_root.configure(bg=theme["bg"])
     manager_root.grab_set()  # Make window modal
 
@@ -834,6 +1064,13 @@ def feed_manager_window(button_frame, scrollable_frame):
         button_controls, 
         text="Add New Feed", 
         command=lambda: add_feed(populate_listbox, button_frame, scrollable_frame)
+    ).pack(side='left', expand=True, padx=5)
+    
+    # NEW EDIT BUTTON
+    ttk.Button(
+        button_controls,
+        text="Edit Selected",
+        command=lambda: edit_feed(feed_listbox, populate_listbox, button_frame, scrollable_frame)
     ).pack(side='left', expand=True, padx=5)
     
     ttk.Button(
@@ -955,6 +1192,9 @@ def add_feed(refresh_listbox, button_frame, scrollable_frame):
     if not url:
         return
     
+    name = name.strip()
+    url = url.strip()
+    
     # Check for duplicate names
     if name in CURRENT_FEEDS:
         messagebox.showwarning("Warning", f"A feed named '{name}' already exists. Please choose a unique name.")
@@ -966,6 +1206,94 @@ def add_feed(refresh_listbox, button_frame, scrollable_frame):
     update_category_buttons(button_frame, scrollable_frame)
     messagebox.showinfo("Success", f"Feed '{name}' has been added to the current list.")
 
+
+def edit_feed(listbox, refresh_listbox, button_frame, scrollable_frame):
+    """
+    Opens dialogs to edit the name and URL of a selected feed.
+    
+    Args:
+        listbox: The listbox widget containing feeds
+        refresh_listbox: Function to refresh the feed listbox
+        button_frame: The frame containing category buttons
+        scrollable_frame: The scrollable frame for news content
+    """
+    global CURRENT_FEEDS, ACTIVE_FEED_URL, ALL_ARTICLES
+    try:
+        selection_index = listbox.curselection()[0]
+        selected_item = listbox.get(selection_index)
+
+        # Extract feed name and URL from the listbox item
+        # Format is "Name: URL"
+        parts = selected_item.split(': ', 1)
+        if len(parts) != 2:
+            raise ValueError("Invalid format in listbox item.")
+            
+        old_name = parts[0].strip()
+        old_url = parts[1].strip()
+
+        # 1. Prompt for new name (pre-filling with old name)
+        new_name = simpledialog.askstring(
+            "Edit Feed Name", 
+            f"Enter the new category name for '{old_name}':", 
+            initialvalue=old_name,
+            parent=ROOT
+        )
+        if not new_name:
+            return
+        
+        # 2. Prompt for new URL (pre-filling with old URL)
+        new_url = simpledialog.askstring(
+            "Edit RSS URL", 
+            f"Enter the new RSS URL for '{new_name}':", 
+            initialvalue=old_url,
+            parent=ROOT
+        )
+        if not new_url:
+            return
+            
+        new_name = new_name.strip()
+        new_url = new_url.strip()
+
+        # 3. Check for name conflicts (only if name has changed)
+        if new_name != old_name and new_name in CURRENT_FEEDS:
+             messagebox.showwarning("Warning", f"A feed named '{new_name}' already exists. Please choose a unique name.")
+             return
+        
+        # 4. Perform Update
+        
+        # Check if the feed being edited is the active one in the main view
+        was_active = (old_url == ACTIVE_FEED_URL)
+        
+        if new_name != old_name:
+            # Delete old entry and add new one
+            del CURRENT_FEEDS[old_name]
+            CURRENT_FEEDS[new_name] = new_url
+            
+            # If we delete the old entry, we must move its cached articles if the URL didn't change
+            if old_url == new_url and old_url in ALL_ARTICLES:
+                 ALL_ARTICLES[new_url] = ALL_ARTICLES.pop(old_url)
+                 
+        else:
+            # Name is the same, just update the URL
+            CURRENT_FEEDS[new_name] = new_url
+        
+        # 5. Refresh GUI
+        refresh_listbox()
+        update_category_buttons(button_frame, scrollable_frame)
+        messagebox.showinfo("Success", f"Feed '{new_name}' has been updated.")
+        
+        # 6. If the edited feed was active and its URL changed, clear the main display
+        if was_active and old_url != new_url:
+            # Clear the main display (since the URL is different, old data is invalid)
+            for widget in scrollable_frame.winfo_children():
+                 widget.destroy()
+
+    except IndexError:
+        messagebox.showwarning("Warning", "Please select a feed to edit.")
+    except Exception as e:
+        messagebox.showerror("Error", f"An unexpected error occurred during editing: {e}")
+
+
 def remove_feed(listbox, refresh_listbox, button_frame, scrollable_frame):
     """
     Removes the selected feed from the current list.
@@ -976,6 +1304,7 @@ def remove_feed(listbox, refresh_listbox, button_frame, scrollable_frame):
         button_frame: The frame containing category buttons
         scrollable_frame: The scrollable frame for news content
     """
+    global CURRENT_FEEDS
     try:
         selection_index = listbox.curselection()[0]
         selected_item = listbox.get(selection_index)
@@ -984,9 +1313,16 @@ def remove_feed(listbox, refresh_listbox, button_frame, scrollable_frame):
         name = selected_item.split(':')[0].strip()
 
         if name in CURRENT_FEEDS:
-            del CURRENT_FEEDS[name]
-            refresh_listbox()
-            update_category_buttons(button_frame, scrollable_frame)
+            if messagebox.askyesno("Confirm Deletion", f"Are you sure you want to remove the feed '{name}' from the current list?"):
+                del CURRENT_FEEDS[name]
+                refresh_listbox()
+                update_category_buttons(button_frame, scrollable_frame)
+                
+                # Clear the main display if the removed feed was the active one
+                if len(CURRENT_FEEDS) == 0:
+                    for widget in scrollable_frame.winfo_children():
+                        widget.destroy()
+                
     except IndexError:
         messagebox.showwarning("Warning", "Please select a feed to remove.")
 
@@ -1104,11 +1440,26 @@ def delete_list(listbox, refresh_saved_listbox):
 # TKINTER GUI SETUP
 # ========================================
 
+def enable_mouse_wheel(canvas):
+    """
+    Binds the mouse wheel event to the canvas for scrolling across OS platforms.
+    """
+    # For Windows and Linux
+    def _on_mouse_wheel(event):
+        # Determine scroll direction and amount based on OS/Event type
+        if event.num == 5 or event.delta < 0:
+            canvas.yview_scroll(1, "unit")
+        elif event.num == 4 or event.delta > 0:
+            canvas.yview_scroll(-1, "unit")
+
+    # Bind events
+    canvas.bind_all("<Button-4>", _on_mouse_wheel) # Linux scroll up
+    canvas.bind_all("<Button-5>", _on_mouse_wheel) # Linux scroll down
+    canvas.bind_all("<MouseWheel>", _on_mouse_wheel) # Windows/macOS
+
 def setup_gui():
     """
     Sets up the main Tkinter window and all widgets.
-    Creates the menu bar with File, Style, and Location menus, category buttons, 
-    date/time/weather display, and scrollable content area.
     """
     global ROOT, DATETIME_LABEL, WEATHER_LABEL
     
@@ -1123,7 +1474,7 @@ def setup_gui():
     configure_ttk_theme()
     
     # ========================================
-    # TOP HEADER FRAME (Date, Time, Weather)
+    # TOP HEADER FRAME (Date, Time, Weather, Refresh)
     # ========================================
     theme = THEMES[CURRENT_THEME]
     
@@ -1140,8 +1491,17 @@ def setup_gui():
     )
     DATETIME_LABEL.pack(side='left', padx=(0, 20))
     update_datetime_label() # Start the real-time clock
+    
+    # 2. Manual Refresh Button (Text instead of emoji)
+    ttk.Button(
+        header_frame, 
+        text="Refresh", 
+        width=8,
+        command=lambda: periodic_refresh(manual=True) # Manually trigger immediate refresh
+    ).pack(side='right', padx=10)
 
-    # 2. Weather Display Label 
+
+    # 3. Weather Display Label 
     WEATHER_LABEL = tk.Label(
         header_frame, 
         text="Loading weather...", 
@@ -1149,7 +1509,7 @@ def setup_gui():
         bg=theme["frame_bg"],
         fg=theme["fg"]
     )
-    WEATHER_LABEL.pack(side='right', padx=10)
+    WEATHER_LABEL.pack(side='right')
     update_weather_display() # Display initial weather
 
     # ========================================
@@ -1189,7 +1549,8 @@ def setup_gui():
                           activeforeground=theme["menu_fg"])
     menubar.add_cascade(label="Location", menu=location_menu)
     
-    location_menu.add_command(label="Change Weather Location...", 
+    # UPDATED: Menu text
+    location_menu.add_command(label="Change Location...", 
                               command=location_manager_window) # Opens the new window
     
     # Style Menu - For theme switching
@@ -1228,9 +1589,15 @@ def setup_gui():
 
     canvas.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
+    
+    # === MOUSE WHEEL FIX ===
+    enable_mouse_wheel(canvas)
 
     # Initial update of category buttons and content
     update_category_buttons(button_frame, scrollable_frame)
+    
+    # Start the periodic news refresh 
+    periodic_refresh()
 
     # Apply theme fully to ensure all new widgets are colored correctly
     apply_theme()

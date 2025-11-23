@@ -14,7 +14,7 @@ Open command line > pip install feedparser
 
 Save the files provided in the following structure
 
-Root folder: News Feed by Mattias.py
+Root folder: News Feed by Mattias.py, widgets.py, utils.py, rss.py, themes.py, config.py
 
 ----------------------------
 

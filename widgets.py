@@ -192,7 +192,8 @@ def periodic_refresh(manual=False):
         and config.ACTIVE_FEED_CONTAINER.winfo_exists()
     ):
         category_name = "Refreshed Feed"
-        for name, url in config.CURRENT_FEEDS.items():
+        # ÄNDRING 1: Iterera över lista av tuples
+        for name, url in config.CURRENT_FEEDS:
             if url == config.ACTIVE_FEED_URL:
                 category_name = name
                 break
@@ -254,7 +255,8 @@ def update_category_buttons(button_frame, scrollable_frame):
         ).pack(side="left", padx=10)
         return
 
-    for name, url in config.CURRENT_FEEDS.items():
+    # ÄNDRING 1: Iterera över lista av tuples
+    for name, url in config.CURRENT_FEEDS:
         button = ttk.Button(
             button_frame,
             text=name,
@@ -263,21 +265,67 @@ def update_category_buttons(button_frame, scrollable_frame):
         button.pack(side="left", expand=True, fill="x", padx=5)
 
     # Auto-load first feed if none active
-    if config.ACTIVE_FEED_URL not in config.CURRENT_FEEDS.values():
-        initial_category_url = list(config.CURRENT_FEEDS.values())[0]
-        initial_category_name = list(config.CURRENT_FEEDS.keys())[0]
-        fetch_and_display_news(
-            initial_category_url, scrollable_frame, initial_category_name
-        )
+    feed_urls = [url for name, url in config.CURRENT_FEEDS]
+    if config.ACTIVE_FEED_URL not in feed_urls:
+        # ÄNDRING 1: Använd första elementet i listan
+        if config.CURRENT_FEEDS:
+            initial_category_name, initial_category_url = config.CURRENT_FEEDS[0]
+            fetch_and_display_news(
+                initial_category_url, scrollable_frame, initial_category_name
+            )
 
+# ---------- FEED MANAGER HELPER (ÄNDRING 1) ----------
+def get_feed_list_index_by_name(feed_name):
+    """Hjälpfunktion för att hitta index i CURRENT_FEEDS-listan."""
+    for i, (name, url) in enumerate(config.CURRENT_FEEDS):
+        if name == feed_name:
+            return i
+    return -1
 
-# ---------- FEED MANAGER WINDOW ----------
+def move_feed(listbox, refresh_listbox, direction, button_frame, scrollable_frame):
+    """Flyttar det valda flödet upp (-1) eller ner (+1) i listan."""
+    try:
+        idx = listbox.curselection()[0]
+        item = listbox.get(idx)
+        name = item.split(":")[0].strip()
+        
+        current_index = get_feed_list_index_by_name(name)
+        
+        if current_index == -1:
+            return
+
+        new_index = current_index + direction
+        
+        if 0 <= new_index < len(config.CURRENT_FEEDS):
+            # Flytta objektet i den centrala listan
+            feed_to_move = config.CURRENT_FEEDS.pop(current_index)
+            config.CURRENT_FEEDS.insert(new_index, feed_to_move)
+            
+            # Spara och uppdatera huvud-UI
+            config.save_config()
+            update_category_buttons(button_frame, scrollable_frame)
+            
+            refresh_listbox()
+            # Välj det flyttade objektet
+            listbox.selection_set(new_index)
+            listbox.see(new_index)
+            
+    except IndexError:
+        messagebox.showwarning("Warning", "Please select a feed to move.")
+
+# ---------- FEED MANAGER WINDOW (ÄNDRING 1, 2) ----------
 def feed_manager_window(button_frame, scrollable_frame):
+    # ÄNDRING 2: Förhindra dubbelöppning
+    if config.FEED_MANAGER_WINDOW and config.FEED_MANAGER_WINDOW.winfo_exists():
+        config.FEED_MANAGER_WINDOW.lift()
+        return
+
     theme = themes.THEMES[config.CURRENT_THEME]
 
     manager_root = tk.Toplevel(config.ROOT)
+    config.FEED_MANAGER_WINDOW = manager_root # Spara referens
     manager_root.title("Manage Current RSS Feeds")
-    manager_root.geometry("600x300")
+    manager_root.geometry("600x350")
     manager_root.configure(bg=theme["bg"])
     manager_root.grab_set()
 
@@ -304,8 +352,27 @@ def feed_manager_window(button_frame, scrollable_frame):
 
     def populate_listbox():
         feed_listbox.delete(0, tk.END)
-        for name, url in config.CURRENT_FEEDS.items():
+        # ÄNDRING 1: Iterera över lista av tuples
+        for name, url in config.CURRENT_FEEDS:
             feed_listbox.insert(tk.END, f"{name}: {url}")
+
+    # ÄNDRING 1: Kontroller för att flytta flöden
+    move_ctrl = tk.Frame(frame, bg=theme["frame_bg"])
+    move_ctrl.pack(fill="x", pady=5)
+    
+    ttk.Button(
+        move_ctrl,
+        text="Move Up (↑)",
+        command=lambda: move_feed(feed_listbox, populate_listbox, -1, button_frame, scrollable_frame),
+    ).pack(side="left", expand=True, padx=5)
+    
+    ttk.Button(
+        move_ctrl,
+        text="Move Down (↓)",
+        command=lambda: move_feed(feed_listbox, populate_listbox, 1, button_frame, scrollable_frame),
+    ).pack(side="left", expand=True, padx=5)
+    
+    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=5)
 
     ctrl = tk.Frame(frame, bg=theme["frame_bg"])
     ctrl.pack(fill="x", pady=5)
@@ -333,17 +400,36 @@ def feed_manager_window(button_frame, scrollable_frame):
     ).pack(side="right", expand=True, padx=5)
 
     populate_listbox()
-    manager_root.protocol("WM_DELETE_WINDOW", manager_root.destroy)
+    
+    # ÄNDRING 2: Återställ referensen när fönstret stängs
+    def on_close():
+        config.FEED_MANAGER_WINDOW = None
+        manager_root.destroy()
+        
+    manager_root.protocol("WM_DELETE_WINDOW", on_close)
     themes.apply_theme_to_widget(manager_root, config.CURRENT_THEME)
 
 
-# ---------- SAVED LISTS ----------
+# ---------- SAVED LISTS HELPER (ÄNDRING 4) ----------
+def save_current_list_and_refresh(refresh_listbox):
+    """Saves the current feed list and updates the saved lists listbox."""
+    save_current_list()
+    refresh_listbox()
+
+
+# ---------- SAVED LISTS (ÄNDRING 2, 4) ----------
 def show_saved_lists_window(button_frame, scrollable_frame):
+    # ÄNDRING 2: Förhindra dubbelöppning
+    if config.SAVED_LISTS_WINDOW and config.SAVED_LISTS_WINDOW.winfo_exists():
+        config.SAVED_LISTS_WINDOW.lift()
+        return
+
     theme = themes.THEMES[config.CURRENT_THEME]
 
     saved_root = tk.Toplevel(config.ROOT)
-    saved_root.title("Saved Feed Lists")
-    saved_root.geometry("450x300")
+    config.SAVED_LISTS_WINDOW = saved_root # Spara referens
+    saved_root.title("Manage Feed Lists") # ÄNDRING 4: Ny titel
+    saved_root.geometry("600x300")
     saved_root.configure(bg=theme["bg"])
     saved_root.grab_set()
 
@@ -391,6 +477,13 @@ def show_saved_lists_window(button_frame, scrollable_frame):
     button_controls = tk.Frame(frame, bg=theme["frame_bg"])
     button_controls.pack(fill="x", pady=5)
 
+    # ÄNDRING 4: Lägg till "Save Current List" som en sub-funktion
+    ttk.Button(
+        button_controls,
+        text="Save Current List",
+        command=lambda: save_current_list_and_refresh(populate_saved_listbox),
+    ).pack(side="left", expand=True, padx=5)
+
     ttk.Button(
         button_controls,
         text="Load List",
@@ -411,11 +504,16 @@ def show_saved_lists_window(button_frame, scrollable_frame):
         command=lambda: delete_list(listbox, populate_saved_listbox),
     ).pack(side="left", expand=True, padx=5)
 
-    saved_root.protocol("WM_DELETE_WINDOW", saved_root.destroy)
+    # ÄNDRING 2: Återställ referensen när fönstret stängs
+    def on_close():
+        config.SAVED_LISTS_WINDOW = None
+        saved_root.destroy()
+        
+    saved_root.protocol("WM_DELETE_WINDOW", on_close)
     themes.apply_theme_to_widget(saved_root, config.CURRENT_THEME)
 
 
-# ---------- FEED CRUD ----------
+# ---------- FEED CRUD (ÄNDRING 1) ----------
 def add_feed(refresh_listbox, button_frame, scrollable_frame):
     name = simpledialog.askstring(
         "Add Feed", "Enter the Category Name (e.g., Tech News):", parent=config.ROOT
@@ -432,11 +530,15 @@ def add_feed(refresh_listbox, button_frame, scrollable_frame):
     name = name.strip()
     url = url.strip()
 
-    if name in config.CURRENT_FEEDS:
+    # ÄNDRING 1: Kolla mot lista av tuples
+    existing_names = [n for n, u in config.CURRENT_FEEDS]
+    if name in existing_names:
         messagebox.showwarning("Warning", f"A feed named '{name}' already exists.")
         return
 
-    config.CURRENT_FEEDS[name] = url
+    # ÄNDRING 1: Lägg till som en tuple i listan
+    config.CURRENT_FEEDS.append((name, url))
+    config.save_config() # Spara ändringen
     refresh_listbox()
     update_category_buttons(button_frame, scrollable_frame)
     messagebox.showinfo("Success", f"Feed '{name}' has been added.")
@@ -473,24 +575,29 @@ def edit_feed(listbox, refresh_listbox, button_frame, scrollable_frame):
         new_name = new_name.strip()
         new_url = new_url.strip()
 
-        if new_name != old_name and new_name in config.CURRENT_FEEDS:
+        # ÄNDRING 1: Kolla mot lista av tuples
+        existing_names = [n for n, u in config.CURRENT_FEEDS if n != old_name]
+        if new_name in existing_names:
             messagebox.showwarning(
                 "Warning", f"A feed named '{new_name}' already exists."
             )
             return
 
+        # ÄNDRING 1: Hitta index och uppdatera elementet
+        current_index = get_feed_list_index_by_name(old_name)
+        if current_index == -1: return
+
         was_active = old_url == config.ACTIVE_FEED_URL
 
-        if new_name != old_name:
-            del config.CURRENT_FEEDS[old_name]
-            config.CURRENT_FEEDS[new_name] = new_url
+        # ÄNDRING 1: Uppdatera elementet i listan
+        config.CURRENT_FEEDS[current_index] = (new_name, new_url)
 
-            # FIXED LINE (your crash)
-            if old_url == new_url and old_url in config.ALL_ARTICLES:
-                config.ALL_ARTICLES[new_url] = config.ALL_ARTICLES.pop(old_url)
-        else:
-            config.CURRENT_FEEDS[new_name] = new_url
+        # Update ALL_ARTICLES key if URL changed
+        if old_url != new_url and old_url in config.ALL_ARTICLES:
+            config.ALL_ARTICLES[new_url] = config.ALL_ARTICLES.pop(old_url)
+        # Dictionary-specifik logik borttagen
 
+        config.save_config() # Spara ändringen
         refresh_listbox()
         update_category_buttons(button_frame, scrollable_frame)
         messagebox.showinfo("Success", f"Feed '{new_name}' updated.")
@@ -511,10 +618,14 @@ def remove_feed(listbox, refresh_listbox, button_frame, scrollable_frame):
         item = listbox.get(idx)
         name = item.split(":")[0].strip()
 
-        if name in config.CURRENT_FEEDS and messagebox.askyesno(
+        # ÄNDRING 1: Hitta index och ta bort från listan
+        current_index = get_feed_list_index_by_name(name)
+
+        if current_index != -1 and messagebox.askyesno(
             "Confirm", f"Remove '{name}'?"
         ):
-            del config.CURRENT_FEEDS[name]
+            del config.CURRENT_FEEDS[current_index]
+            config.save_config() # Spara ändringen
             refresh_listbox()
             update_category_buttons(button_frame, scrollable_frame)
 
@@ -541,6 +652,7 @@ def save_current_list():
         )
         return
 
+    # ÄNDRING 1: Spara listan av tuples
     config.SAVED_LISTS[list_name] = config.CURRENT_FEEDS.copy()
     config.save_config()
 
@@ -556,7 +668,15 @@ def load_list(listbox, refresh_saved_listbox, button_frame, scrollable_frame, sa
         if list_name in config.SAVED_LISTS and messagebox.askyesno(
             "Load", f"Replace current feeds with '{list_name}'?"
         ):
-            config.CURRENT_FEEDS = config.SAVED_LISTS[list_name].copy()
+            loaded_feeds = config.SAVED_LISTS[list_name]
+            
+            # ÄNDRING 1: Hantera bakåtkompatibilitet
+            if isinstance(loaded_feeds, dict):
+                config.CURRENT_FEEDS = list(loaded_feeds.items())
+            else:
+                config.CURRENT_FEEDS = loaded_feeds.copy()
+                
+            config.save_config() # Spara den nya listan som CURRENT_FEEDS
             update_category_buttons(button_frame, scrollable_frame)
             messagebox.showinfo("Loaded", f"Loaded list: '{list_name}'.")
             saved_root.destroy()
@@ -607,11 +727,17 @@ def delete_list(listbox, refresh_saved_listbox):
         messagebox.showwarning("Warning", "Please select a list to delete.")
 
 
-# ---------- LOCATION MANAGER ----------
+# ---------- LOCATION MANAGER (ÄNDRING 2, 3) ----------
 def location_manager_window():
+    # ÄNDRING 2: Förhindra dubbelöppning
+    if config.LOCATION_MANAGER_WINDOW and config.LOCATION_MANAGER_WINDOW.winfo_exists():
+        config.LOCATION_MANAGER_WINDOW.lift()
+        return
+
     theme = themes.THEMES[config.CURRENT_THEME]
 
     manager_root = tk.Toplevel(config.ROOT)
+    config.LOCATION_MANAGER_WINDOW = manager_root # Spara referens
     manager_root.title("Location Settings")
     manager_root.geometry("400x350")
     manager_root.configure(bg=theme["bg"])
@@ -666,7 +792,8 @@ def location_manager_window():
 
     ttk.Button(
         button_controls,
-        text="Add New Location...",
+        # ÄNDRING 3: Ta bort "..."
+        text="Add New Location",
         command=lambda: utils.add_new_location_dialog(location_listbox, manager_root),
     ).pack(side="right", expand=True, padx=5)
 
@@ -680,14 +807,19 @@ def location_manager_window():
         bg=theme["frame_bg"],
         fg=theme["summary_fg"],
     ).pack(fill="x")
-
+    
+    # ÄNDRING 2: Återställ referensen när fönstret stängs
+    def on_close():
+        config.LOCATION_MANAGER_WINDOW = None
+        manager_root.destroy()
+        
     themes.apply_theme_to_widget(manager_root, config.CURRENT_THEME)
 
-    manager_root.protocol("WM_DELETE_WINDOW", manager_root.destroy)
+    manager_root.protocol("WM_DELETE_WINDOW", on_close)
     manager_root.update_idletasks()
 
 
-# ---------- GUI SETUP ----------
+# ---------- GUI SETUP (ÄNDRING 3, 4) ----------
 def setup_gui():
     config.load_config()
 
@@ -743,12 +875,11 @@ def setup_gui():
     )
     menubar.add_cascade(label="File", menu=file_menu)
 
+    # ÄNDRING 4: 'Save Current List' har flyttats till fönstret Manage Feed Lists och tas bort härifrån.
+
+    # ÄNDRING 3 & 4: Döp om menyvalet och ta bort "..."
     file_menu.add_command(
-        label="Save Current List...", command=lambda: save_current_list()
-    )
-    file_menu.add_separator()
-    file_menu.add_command(
-        label="Load/Manage Saved Lists...",
+        label="Manage Feed Lists",
         command=lambda: show_saved_lists_window(button_frame, scrollable_frame),
     )
     file_menu.add_separator()
@@ -764,8 +895,9 @@ def setup_gui():
         activeforeground=theme["menu_fg"],
     )
     menubar.add_cascade(label="Location", menu=location_menu)
+    # ÄNDRING 3: Ta bort "..."
     location_menu.add_command(
-        label="Change Location...", command=location_manager_window
+        label="Change Location", command=location_manager_window
     )
 
     # STYLE MENU

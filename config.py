@@ -5,7 +5,7 @@ import os
 CONFIG_FILE = "rss_config.json"
 
 DEFAULT_FEEDS = {
-    "Technology": "https://www.theverge.com/rss/index.xml",
+    "Technology": "https://techcrunch.com/feed/",
     "Finance": "https://www.valuewalk.com/feed",
     "World": "http://feeds.bbci.co.uk/news/world/rss.xml"
 }

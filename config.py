@@ -4,18 +4,25 @@ import os
 
 CONFIG_FILE = "rss_config.json"
 
-DEFAULT_FEEDS = {
-    "Technology": "https://techcrunch.com/feed/",
-    "Finance": "https://www.valuewalk.com/feed",
-    "World": "http://feeds.bbci.co.uk/news/world/rss.xml"
-}
+# ÄNDRING 1: Ändrat DEFAULT_FEEDS till en lista av tuples för att bevara ordning.
+DEFAULT_FEEDS = [
+    ("Technology", "https://techcrunch.com/feed/"),
+    ("Finance", "https://www.valuewalk.com/feed"),
+    ("World", "http://feeds.bbci.co.uk/news/world/rss.xml")
+]
 
 # Runtime state (mutated by modules)
-CURRENT_FEEDS = {}
+# ÄNDRING 1: Ändrat CURRENT_FEEDS till en lista av tuples.
+CURRENT_FEEDS = []
 SAVED_LISTS = {}
 DEFAULT_LIST_NAME = "Standard Default"
 CURRENT_THEME = "light"
 ROOT = None
+
+# ÄNDRING 2: Globala variabler för att spåra öppna fönster.
+FEED_MANAGER_WINDOW = None
+SAVED_LISTS_WINDOW = None
+LOCATION_MANAGER_WINDOW = None
 
 DEFAULT_LOCATIONS = [
     "Stockholm, SE", "London, UK", "New York, US", "Tokyo, JP",
@@ -46,11 +53,16 @@ def load_config():
                 DEFAULT_LOCATIONS = data.get("default_locations", DEFAULT_LOCATIONS)
                 CURRENT_WEATHER_LOCATION = data.get("weather_location", CURRENT_WEATHER_LOCATION)
         except json.JSONDecodeError:
-            # Avoid importing tkinter here to reduce coupling; caller may show a message
             pass
 
     if DEFAULT_LIST_NAME in SAVED_LISTS:
-        CURRENT_FEEDS = SAVED_LISTS[DEFAULT_LIST_NAME].copy()
+        loaded_feeds = SAVED_LISTS[DEFAULT_LIST_NAME]
+        
+        # ÄNDRING 1: Bakåtkompatibilitet: Konvertera gammal dictionary till lista av tuples
+        if isinstance(loaded_feeds, dict):
+            CURRENT_FEEDS = list(loaded_feeds.items())
+        else:
+            CURRENT_FEEDS = loaded_feeds.copy()
     else:
         SAVED_LISTS["Standard Default"] = DEFAULT_FEEDS.copy()
         DEFAULT_LIST_NAME = "Standard Default"
@@ -58,7 +70,11 @@ def load_config():
         save_config()
 
 def save_config():
-    global SAVED_LISTS, DEFAULT_LIST_NAME, CURRENT_THEME, CURRENT_WEATHER_LOCATION, DEFAULT_LOCATIONS
+    global SAVED_LISTS, CURRENT_FEEDS, DEFAULT_LIST_NAME, CURRENT_THEME, CURRENT_WEATHER_LOCATION, DEFAULT_LOCATIONS
+    
+    # ÄNDRING 1: Uppdatera sparad lista med aktuell lista innan sparande
+    SAVED_LISTS[DEFAULT_LIST_NAME] = CURRENT_FEEDS.copy() 
+    
     data = {
         "saved_lists": SAVED_LISTS,
         "default_list_name": DEFAULT_LIST_NAME,
@@ -70,5 +86,4 @@ def save_config():
         with open(CONFIG_FILE, 'w') as f:
             json.dump(data, f, indent=4)
     except Exception:
-        # Silent fail — UI shows message if needed
         pass

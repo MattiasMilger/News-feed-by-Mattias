@@ -1,6 +1,5 @@
 # File: News Feed by Mattias.py
-# Main entry point for your application.
-# Ultra-simple: imports the widgets module and launches the GUI.
+# Main entry point for the application
 
 import widgets
 

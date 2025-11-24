@@ -54,23 +54,37 @@ def configure_ttk_theme(current_theme_name):
     except Exception:
         pass
 
+    # Configure generic button
     style.configure("TButton",
                     background=theme["button_bg"],
                     foreground=theme["button_fg"],
                     borderwidth=1,
+                    focuscolor=theme["button_bg"],  # Removes blue focus ring
                     font=("Arial", 10, "bold"),
                     padding=8)
+    
+    # Map states to remove native blue effects
     style.map("TButton",
-              background=[('active', theme["button_active_bg"]), ('pressed', theme["button_active_bg"])])
-    style.configure("Active.TButton", background=theme["headline_fg"], foreground=theme["bg"])
+              background=[('active', theme["button_active_bg"]), ('pressed', theme["button_active_bg"])],
+              focuscolor=[('active', theme["button_bg"]), ('focus', theme["button_bg"])])
+
+    # Configure Active button (selected category)
+    style.configure("Active.TButton", 
+                    background=theme["headline_fg"], 
+                    foreground=theme["bg"],
+                    focuscolor=theme["headline_fg"]) # Removes blue focus ring
+                    
+    style.map("Active.TButton",
+              background=[('active', theme["headline_fg"]), ('pressed', theme["headline_fg"])],
+              focuscolor=[('active', theme["headline_fg"]), ('focus', theme["headline_fg"])])
+
     style.configure("TFrame", background=theme["frame_bg"])
     style.configure("TLabel", background=theme["frame_bg"], foreground=theme["fg"])
     style.configure("TSeparator", background=theme["separator_bg"])
     style.configure("Vertical.TScrollbar", background=theme["frame_bg"], troughcolor=theme["bg"])
 
 def apply_theme_to_widget(widget, current_theme_name):
-    from themes import THEMES as _THEMES
-    theme = _THEMES[current_theme_name]
+    theme = THEMES[current_theme_name]
     widget_class = widget.winfo_class()
     try:
         if widget_class in ("Frame", "Labelframe"):
@@ -80,8 +94,10 @@ def apply_theme_to_widget(widget, current_theme_name):
         elif widget_class == "Canvas":
             widget.configure(bg=theme["canvas_bg"], highlightthickness=0)
         elif widget_class == "Listbox":
+            # activestyle='none' removes the underline on selected items
             widget.configure(bg=theme["listbox_bg"], fg=theme["listbox_fg"],
-                             selectbackground=theme["button_active_bg"], selectforeground=theme["fg"])
+                             selectbackground=theme["button_active_bg"], selectforeground=theme["fg"],
+                             activestyle='none')
         elif widget_class == "Text":
             widget.configure(bg=theme["entry_bg"], fg=theme["entry_fg"], insertbackground=theme["fg"])
         elif widget_class == "Entry":

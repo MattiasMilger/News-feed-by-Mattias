@@ -87,6 +87,8 @@ def display_page(container, category_name, feed_url, page_number):
             start_page = max(1, total_pages - MAX_BUTTONS + 1)
             
         for i in range(start_page, end_page + 1):
+            # This is fine, since it toggles between TButton (generic) and Active.TButton (the one we want to remove)
+            # The Active.TButton style is *not* removed here, but will be removed by the other fix
             style = "Active.TButton" if i == page_number else "TButton"
             ttk.Button(nav, text=str(i), command=lambda p=i: display_page(container, category_name, feed_url, p), style=style).pack(side="left", padx=2)
 
@@ -173,7 +175,9 @@ def update_category_buttons(button_frame, scrollable_frame):
     if config.ACTIVE_FEED_URL not in feed_urls: config.ACTIVE_FEED_URL = None
 
     for name, url in config.CURRENT_FEEDS:
-        style = "Active.TButton" if url == config.ACTIVE_FEED_URL else "TButton"
+        # FIX: Always use the standard TButton style. Since we removed Active.TButton style, this ensures
+        # the active button gets the same style as every other button.
+        style = "TButton" 
         ttk.Button(button_container, text=name, style=style, command=lambda u=url, n=name: fetch_and_display_news(u, scrollable_frame, n)).pack(side="left", padx=3, pady=5)
 
     if config.ACTIVE_FEED_URL is None and config.CURRENT_FEEDS:

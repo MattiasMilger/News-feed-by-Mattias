@@ -11,6 +11,7 @@ THEMES = {
         "headline_fg": "#1A237E",
         "summary_fg": "#37474F",
         "category_fg": "#4A148C",
+        # "active_button_bg" removed
         "canvas_bg": "#FFFFFF",
         "frame_bg": "#F5F5F5",
         "entry_bg": "#FFFFFF",
@@ -32,6 +33,7 @@ THEMES = {
         "headline_fg": "#82B1FF",
         "summary_fg": "#B0BEC5",
         "category_fg": "#CE93D8",
+        # "active_button_bg" removed
         "canvas_bg": "#252526",
         "frame_bg": "#2D2D30",
         "entry_bg": "#3E3E42",
@@ -54,29 +56,22 @@ def configure_ttk_theme(current_theme_name):
     except Exception:
         pass
 
-    # Configure generic button
+    # Configure generic button (TButton)
     style.configure("TButton",
                     background=theme["button_bg"],
                     foreground=theme["button_fg"],
                     borderwidth=1,
-                    focuscolor=theme["button_bg"],  # Removes blue focus ring
+                    focuscolor=theme["button_bg"],
                     font=("Arial", 10, "bold"),
                     padding=8)
     
-    # Map states to remove native blue effects
+    # Map states for TButton
     style.map("TButton",
               background=[('active', theme["button_active_bg"]), ('pressed', theme["button_active_bg"])],
               focuscolor=[('active', theme["button_bg"]), ('focus', theme["button_bg"])])
 
-    # Configure Active button (selected category)
-    style.configure("Active.TButton", 
-                    background=theme["headline_fg"], 
-                    foreground=theme["bg"],
-                    focuscolor=theme["headline_fg"]) # Removes blue focus ring
-                    
-    style.map("Active.TButton",
-              background=[('active', theme["headline_fg"]), ('pressed', theme["headline_fg"])],
-              focuscolor=[('active', theme["headline_fg"]), ('focus', theme["headline_fg"])])
+    # NOTE: Active.TButton style removed entirely to prevent any custom color.
+    # The active button will now just be a standard TButton.
 
     style.configure("TFrame", background=theme["frame_bg"])
     style.configure("TLabel", background=theme["frame_bg"], foreground=theme["fg"])

@@ -177,7 +177,7 @@ def add_feed(refresh_listbox, button_frame, scrollable_frame, parent_win):
         messagebox.showwarning("Warning", f"A feed named '{name}' already exists.", parent=parent_win)
         return
 
-    messagebox.showinfo("Validating", "Validating feed URL... This may take a moment.", parent=parent_win)
+    # Removed: messagebox.showinfo("Validating", "Validating feed URL... This may take a moment.", parent=parent_win)
     valid, error_msg = rss.validate_feed(url)
     
     if not valid:
@@ -224,7 +224,7 @@ def edit_feed(listbox, refresh_listbox, button_frame, scrollable_frame, parent_w
             return
 
         if old_url != new_url:
-            messagebox.showinfo("Validating", "Validating feed URL...", parent=parent_win)
+            # Removed: messagebox.showinfo("Validating", "Validating feed URL...", parent=parent_win)
             valid, error_msg = rss.validate_feed(new_url)
             if not valid:
                 messagebox.showerror("Invalid Feed", f"Validation failed:\n{error_msg}", parent=parent_win)

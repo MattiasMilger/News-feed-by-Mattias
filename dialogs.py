@@ -58,13 +58,13 @@ def change_feed_row(listbox, refresh_listbox, button_frame, scrollable_frame, pa
         current_feed = config.CURRENT_FEEDS[current_index]
         current_row = current_feed[2]
         
-        # Ask for new row
+        # Ask for new row (1-10)
         new_row = simpledialog.askinteger(
             "Change Row",
-            f"Current row: {current_row}\nEnter new row (1, 2, or 3):",
+            f"Current row: {current_row}\nEnter new row (1-10):",
             parent=parent_win,
             minvalue=1,
-            maxvalue=3,
+            maxvalue=10,
             initialvalue=current_row
         )
         
@@ -217,10 +217,10 @@ def add_feed(refresh_listbox, button_frame, scrollable_frame, parent_win):
         return
 
     row = simpledialog.askinteger(
-        "Add Feed", f"Which row? (1, 2, or 3):", 
+        "Add Feed", f"Which row? (1-10):", 
         parent=parent_win,
         minvalue=1,
-        maxvalue=3,
+        maxvalue=10,
         initialvalue=1
     )
     if row is None:
@@ -280,9 +280,9 @@ def edit_feed(listbox, refresh_listbox, button_frame, scrollable_frame, parent_w
         if not new_url: return
         
         new_row = simpledialog.askinteger(
-            "Edit Row", f"Enter row (1, 2, or 3):",
+            "Edit Row", f"Enter row (1-10):",
             initialvalue=old_row, parent=parent_win,
-            minvalue=1, maxvalue=3
+            minvalue=1, maxvalue=10
         )
         if new_row is None:
             new_row = old_row

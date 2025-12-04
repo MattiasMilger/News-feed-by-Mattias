@@ -139,7 +139,7 @@ def periodic_refresh(manual=False):
     if not manual and config.ROOT:
         config.ROOT.after(config.REFRESH_INTERVAL_MS, periodic_refresh)
 
-# Feed button bar with multiple rows
+# Feed button bar with multiple rows (now supports up to 10 rows)
 def update_category_buttons(button_frame, scrollable_frame):
     theme = themes.THEMES[config.CURRENT_THEME]
     for w in button_frame.winfo_children(): w.destroy()
@@ -148,14 +148,14 @@ def update_category_buttons(button_frame, scrollable_frame):
     main_container = tk.Frame(button_frame, bg=theme["frame_bg"])
     main_container.pack(side="left", fill="both", expand=True)
 
-    # Group feeds by row
-    feeds_by_row = {1: [], 2: [], 3: []}
+    # Group feeds by row (now 1-10)
+    feeds_by_row = {i: [] for i in range(1, 11)}
     for name, url, row in config.CURRENT_FEEDS:
-        if row in feeds_by_row:
+        if 1 <= row <= 10:
             feeds_by_row[row].append((name, url, row))
 
-    # Create each row
-    for row_num in [1, 2, 3]:
+    # Create each row (1-10)
+    for row_num in range(1, 11):
         if feeds_by_row[row_num]:  # Only create row if it has feeds
             row_frame = tk.Frame(main_container, bg=theme["frame_bg"])
             row_frame.pack(fill="x", pady=2)

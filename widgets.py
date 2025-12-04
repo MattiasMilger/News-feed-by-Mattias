@@ -87,10 +87,7 @@ def display_page(container, category_name, feed_url, page_number):
             start_page = max(1, total_pages - MAX_BUTTONS + 1)
             
         for i in range(start_page, end_page + 1):
-            # This is fine, since it toggles between TButton (generic) and Active.TButton (the one we want to remove)
-            # The Active.TButton style is *not* removed here, but will be removed by the other fix
-            style = "Active.TButton" if i == page_number else "TButton"
-            ttk.Button(nav, text=str(i), command=lambda p=i: display_page(container, category_name, feed_url, p), style=style).pack(side="left", padx=2)
+            ttk.Button(nav, text=str(i), command=lambda p=i: display_page(container, category_name, feed_url, p), style="TButton").pack(side="left", padx=2)
 
         state_next = "normal" if page_number < total_pages else "disabled"
         tk.Button(nav, text="Next →", state=state_next, command=lambda: display_page(container, category_name, feed_url, page_number + 1)).pack(side="right", padx=10)
@@ -124,7 +121,8 @@ def fetch_and_display_news(feed_url, container, category_name):
 def periodic_refresh(manual=False):
     if config.ACTIVE_FEED_URL and config.ACTIVE_FEED_CONTAINER and config.ACTIVE_FEED_CONTAINER.winfo_exists():
         category_name = "Feed"
-        for name, url in config.CURRENT_FEEDS:
+        for feed_data in config.CURRENT_FEEDS:
+            name, url = feed_data[0], feed_data[1]
             if url == config.ACTIVE_FEED_URL:
                 category_name = name
                 break
@@ -141,47 +139,66 @@ def periodic_refresh(manual=False):
     if not manual and config.ROOT:
         config.ROOT.after(config.REFRESH_INTERVAL_MS, periodic_refresh)
 
-# Feed button bar
+# Feed button bar with multiple rows
 def update_category_buttons(button_frame, scrollable_frame):
     theme = themes.THEMES[config.CURRENT_THEME]
     for w in button_frame.winfo_children(): w.destroy()
 
-    container = tk.Frame(button_frame, bg=theme["frame_bg"])
-    container.pack(side="left", fill="both", expand=True)
+    # Create main container that will hold all rows
+    main_container = tk.Frame(button_frame, bg=theme["frame_bg"])
+    main_container.pack(side="left", fill="both", expand=True)
 
-    canvas = tk.Canvas(container, bg=theme["frame_bg"], height=40, highlightthickness=0)
-    scrollbar = tk.Scrollbar(container, orient="horizontal", command=canvas.xview)
-    button_container = tk.Frame(canvas, bg=theme["frame_bg"])
+    # Group feeds by row
+    feeds_by_row = {1: [], 2: [], 3: []}
+    for name, url, row in config.CURRENT_FEEDS:
+        if row in feeds_by_row:
+            feeds_by_row[row].append((name, url, row))
 
-    button_container.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.create_window((0, 0), window=button_container, anchor="nw")
-    canvas.configure(xscrollcommand=scrollbar.set)
-    
-    def _on_mouse_wheel(event):
-        if getattr(event, "delta", 0) < 0: canvas.xview_scroll(1, "units")
-        elif getattr(event, "delta", 0) > 0: canvas.xview_scroll(-1, "units")
-    canvas.bind_all("<Shift-MouseWheel>", _on_mouse_wheel)
+    # Create each row
+    for row_num in [1, 2, 3]:
+        if feeds_by_row[row_num]:  # Only create row if it has feeds
+            row_frame = tk.Frame(main_container, bg=theme["frame_bg"])
+            row_frame.pack(fill="x", pady=2)
 
-    canvas.pack(side="top", fill="both", expand=True)
-    scrollbar.pack(side="bottom", fill="x")
+            # Canvas for horizontal scrolling
+            canvas = tk.Canvas(row_frame, bg=theme["frame_bg"], height=40, highlightthickness=0)
+            scrollbar = tk.Scrollbar(row_frame, orient="horizontal", command=canvas.xview)
+            button_container = tk.Frame(canvas, bg=theme["frame_bg"])
 
+            button_container.bind("<Configure>", lambda e, c=canvas: c.configure(scrollregion=c.bbox("all")))
+            canvas.create_window((0, 0), window=button_container, anchor="nw")
+            canvas.configure(xscrollcommand=scrollbar.set)
+            
+            def _on_mouse_wheel(event, c=canvas):
+                if getattr(event, "delta", 0) < 0: c.xview_scroll(1, "units")
+                elif getattr(event, "delta", 0) > 0: c.xview_scroll(-1, "units")
+            canvas.bind_all("<Shift-MouseWheel>", _on_mouse_wheel)
+
+            canvas.pack(side="top", fill="both", expand=True)
+            scrollbar.pack(side="bottom", fill="x")
+
+            # Add buttons for this row
+            for name, url, _ in feeds_by_row[row_num]:
+                ttk.Button(
+                    button_container, 
+                    text=name, 
+                    style="TButton",
+                    command=lambda u=url, n=name: fetch_and_display_news(u, scrollable_frame, n)
+                ).pack(side="left", padx=3, pady=5)
+
+    # Manage Feeds button (always on the right)
     ttk.Button(button_frame, text="Manage Feeds", command=lambda: dialogs.feed_manager_window(button_frame, scrollable_frame)).pack(side="right", padx=5, fill="y")
 
     if not config.CURRENT_FEEDS:
-        tk.Label(button_container, text="List is empty. Add feeds via 'Manage Feeds'.", fg=theme["error_fg"], bg=theme["frame_bg"]).pack(side="left", padx=10)
+        tk.Label(main_container, text="List is empty. Add feeds via 'Manage Feeds'.", fg=theme["error_fg"], bg=theme["frame_bg"]).pack(side="left", padx=10)
         return
 
-    feed_urls = [url for name, url in config.CURRENT_FEEDS]
-    if config.ACTIVE_FEED_URL not in feed_urls: config.ACTIVE_FEED_URL = None
-
-    for name, url in config.CURRENT_FEEDS:
-        # FIX: Always use the standard TButton style. Since we removed Active.TButton style, this ensures
-        # the active button gets the same style as every other button.
-        style = "TButton" 
-        ttk.Button(button_container, text=name, style=style, command=lambda u=url, n=name: fetch_and_display_news(u, scrollable_frame, n)).pack(side="left", padx=3, pady=5)
+    feed_urls = [url for name, url, row in config.CURRENT_FEEDS]
+    if config.ACTIVE_FEED_URL not in feed_urls: 
+        config.ACTIVE_FEED_URL = None
 
     if config.ACTIVE_FEED_URL is None and config.CURRENT_FEEDS:
-        initial_name, initial_url = config.CURRENT_FEEDS[0]
+        initial_name, initial_url, _ = config.CURRENT_FEEDS[0]
         fetch_and_display_news(initial_url, scrollable_frame, initial_name)
 
 # Location manager window
@@ -286,7 +303,7 @@ def setup_gui():
     menubar = tk.Menu(config.ROOT, bg=theme["menu_bg"], fg=theme["menu_fg"])
     config.ROOT.config(menu=menubar)
 
-    # --- FILE MENU REFACTORED ---
+    # FILE MENU
     file_menu = tk.Menu(menubar, tearoff=0, bg=theme["menu_bg"], fg=theme["menu_fg"], activebackground=theme["menu_active_bg"], activeforeground=theme["menu_fg"])
     menubar.add_cascade(label="File", menu=file_menu)
 

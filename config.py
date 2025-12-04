@@ -4,9 +4,9 @@ import os
 CONFIG_FILE = "rss_config.json"
 
 DEFAULT_FEEDS = [
-    ("Technology", "https://techcrunch.com/feed/"),
-    ("Finance", "https://www.valuewalk.com/feed"),
-    ("World", "http://feeds.bbci.co.uk/news/world/rss.xml")
+    ("Technology", "https://techcrunch.com/feed/", 1),
+    ("Finance", "https://www.valuewalk.com/feed", 1),
+    ("World", "http://feeds.bbci.co.uk/news/world/rss.xml", 1)
 ]
 
 # Runtime state
@@ -53,34 +53,33 @@ def load_config():
         except json.JSONDecodeError:
             pass
 
-    # Convert all saved lists to proper format (list of tuples)
+    # Convert all saved lists to proper format (list of tuples with row support)
     for list_name in SAVED_LISTS:
         feeds = SAVED_LISTS[list_name]
+        new_feeds = []
+        
         if isinstance(feeds, dict):
-            SAVED_LISTS[list_name] = list(feeds.items())
+            # Old format: dict
+            for name, url in feeds.items():
+                new_feeds.append((name, url, 1))  # Default to row 1
         elif isinstance(feeds, list):
-            new_feeds = []
             for item in feeds:
-                if isinstance(item, (list, tuple)) and len(item) == 2:
-                    new_feeds.append((item[0], item[1]))
+                if isinstance(item, (list, tuple)):
+                    if len(item) == 2:
+                        # Old format: (name, url)
+                        new_feeds.append((item[0], item[1], 1))
+                    elif len(item) == 3:
+                        # New format: (name, url, row)
+                        new_feeds.append((item[0], item[1], item[2]))
                 elif isinstance(item, dict):
                     for k, v in item.items():
-                        new_feeds.append((k, v))
-            SAVED_LISTS[list_name] = new_feeds
+                        new_feeds.append((k, v, 1))
+        
+        SAVED_LISTS[list_name] = new_feeds
 
     # Load the DEFAULT list (the one set to load on startup)
     if DEFAULT_LIST_NAME in SAVED_LISTS:
-        loaded_feeds = SAVED_LISTS[DEFAULT_LIST_NAME]
-        if isinstance(loaded_feeds, dict):
-            CURRENT_FEEDS = list(loaded_feeds.items())
-        elif isinstance(loaded_feeds, list):
-            new_feeds = []
-            for item in loaded_feeds:
-                if isinstance(item, (list, tuple)) and len(item) == 2:
-                    new_feeds.append((item[0], item[1]))
-            CURRENT_FEEDS = new_feeds
-        else:
-            CURRENT_FEEDS = DEFAULT_FEEDS.copy()
+        CURRENT_FEEDS = [tuple(x) for x in SAVED_LISTS[DEFAULT_LIST_NAME]]
         ACTIVE_LIST_NAME = DEFAULT_LIST_NAME
     else:
         SAVED_LISTS["Standard Default"] = DEFAULT_FEEDS.copy()
@@ -95,7 +94,8 @@ def save_config():
     saved_lists_json = {}
     for list_name, feeds in SAVED_LISTS.items():
         if isinstance(feeds, list):
-            saved_lists_json[list_name] = [[name, url] for name, url in feeds]
+            # Save as [name, url, row]
+            saved_lists_json[list_name] = [[name, url, row] for name, url, row in feeds]
         else:
             saved_lists_json[list_name] = feeds
     

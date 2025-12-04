@@ -6,8 +6,8 @@ import rss
 
 def get_feed_list_index_by_name(feed_name):
     """Helper function to find index in CURRENT_FEEDS list."""
-    for i, (name, url) in enumerate(config.CURRENT_FEEDS):
-        if name == feed_name:
+    for i, feed_tuple in enumerate(config.CURRENT_FEEDS):
+        if feed_tuple[0] == feed_name:
             return i
     return -1
 
@@ -16,7 +16,7 @@ def move_feed(listbox, refresh_listbox, direction, button_frame, scrollable_fram
     try:
         idx = listbox.curselection()[0]
         item = listbox.get(idx)
-        name = item.split(":")[0].strip()
+        name = item.split(":")[0].strip().split(" [")[0]  # Extract name before row indicator
         
         current_index = get_feed_list_index_by_name(name)
         
@@ -44,8 +44,49 @@ def move_feed(listbox, refresh_listbox, direction, button_frame, scrollable_fram
     except IndexError:
         messagebox.showwarning("Warning", "Please select a feed to move.", parent=config.FEED_MANAGER_WINDOW)
 
+def change_feed_row(listbox, refresh_listbox, button_frame, scrollable_frame, parent_win):
+    """Change the row for the selected feed."""
+    try:
+        idx = listbox.curselection()[0]
+        item = listbox.get(idx)
+        name = item.split(":")[0].strip().split(" [")[0]
+        
+        current_index = get_feed_list_index_by_name(name)
+        if current_index == -1:
+            return
+            
+        current_feed = config.CURRENT_FEEDS[current_index]
+        current_row = current_feed[2]
+        
+        # Ask for new row
+        new_row = simpledialog.askinteger(
+            "Change Row",
+            f"Current row: {current_row}\nEnter new row (1, 2, or 3):",
+            parent=parent_win,
+            minvalue=1,
+            maxvalue=3,
+            initialvalue=current_row
+        )
+        
+        if new_row is None or new_row == current_row:
+            return
+            
+        # Update the feed with new row
+        config.CURRENT_FEEDS[current_index] = (current_feed[0], current_feed[1], new_row)
+        config.SAVED_LISTS[config.ACTIVE_LIST_NAME] = config.CURRENT_FEEDS.copy()
+        
+        refresh_listbox()
+        from widgets import update_category_buttons
+        update_category_buttons(button_frame, scrollable_frame)
+        
+        listbox.selection_set(current_index)
+        listbox.see(current_index)
+        
+    except IndexError:
+        messagebox.showwarning("Warning", "Please select a feed to change row.", parent=parent_win)
+
 def feed_manager_window(button_frame, scrollable_frame):
-    """Window to manage current RSS feeds with ordering."""
+    """Window to manage current RSS feeds with ordering and row selection."""
     if config.FEED_MANAGER_WINDOW and config.FEED_MANAGER_WINDOW.winfo_exists():
         config.FEED_MANAGER_WINDOW.lift()
         return
@@ -55,8 +96,8 @@ def feed_manager_window(button_frame, scrollable_frame):
     manager_root = tk.Toplevel(config.ROOT)
     config.FEED_MANAGER_WINDOW = manager_root
     manager_root.title(f"Editing: {config.ACTIVE_LIST_NAME}")
-    manager_root.minsize(650, 400)
-    manager_root.geometry("650x400")
+    manager_root.minsize(650, 450)
+    manager_root.geometry("650x450")
     manager_root.configure(bg=theme["bg"])
     
     # ON TOP Logic
@@ -100,8 +141,8 @@ def feed_manager_window(button_frame, scrollable_frame):
 
     def populate_listbox():
         feed_listbox.delete(0, tk.END)
-        for name, url in config.CURRENT_FEEDS:
-            feed_listbox.insert(tk.END, f"{name}: {url}")
+        for name, url, row in config.CURRENT_FEEDS:
+            feed_listbox.insert(tk.END, f"{name} [Row {row}]: {url}")
 
     # Controls - Changed to UP/DOWN
     move_ctrl = tk.Frame(frame, bg=theme["frame_bg"])
@@ -109,14 +150,20 @@ def feed_manager_window(button_frame, scrollable_frame):
     
     ttk.Button(
         move_ctrl,
-        text="Move Up (↑)",
+        text="Move Left",
         command=lambda: move_feed(feed_listbox, populate_listbox, -1, button_frame, scrollable_frame),
     ).pack(side="left", expand=True, padx=5)
     
     ttk.Button(
         move_ctrl,
-        text="Move Down (↓)",
+        text="Move Right",
         command=lambda: move_feed(feed_listbox, populate_listbox, 1, button_frame, scrollable_frame),
+    ).pack(side="left", expand=True, padx=5)
+    
+    ttk.Button(
+        move_ctrl,
+        text="Change Row",
+        command=lambda: change_feed_row(feed_listbox, populate_listbox, button_frame, scrollable_frame, manager_root),
     ).pack(side="left", expand=True, padx=5)
     
     ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=5)
@@ -169,39 +216,56 @@ def add_feed(refresh_listbox, button_frame, scrollable_frame, parent_win):
     if not url:
         return
 
+    row = simpledialog.askinteger(
+        "Add Feed", f"Which row? (1, 2, or 3):", 
+        parent=parent_win,
+        minvalue=1,
+        maxvalue=3,
+        initialvalue=1
+    )
+    if row is None:
+        row = 1
+
     name = name.strip()
     url = url.strip()
 
-    existing_names = [n for n, u in config.CURRENT_FEEDS]
+    existing_names = [n for n, u, r in config.CURRENT_FEEDS]
     if name in existing_names:
         messagebox.showwarning("Warning", f"A feed named '{name}' already exists.", parent=parent_win)
         return
 
-    # Removed: messagebox.showinfo("Validating", "Validating feed URL... This may take a moment.", parent=parent_win)
     valid, error_msg = rss.validate_feed(url)
     
     if not valid:
         messagebox.showerror("Invalid Feed", f"Feed validation failed:\n{error_msg}", parent=parent_win)
         return
 
-    config.CURRENT_FEEDS.append((name, url))
+    config.CURRENT_FEEDS.append((name, url, row))
     config.SAVED_LISTS[config.ACTIVE_LIST_NAME] = config.CURRENT_FEEDS.copy()
     
     refresh_listbox()
     from widgets import update_category_buttons
     update_category_buttons(button_frame, scrollable_frame)
-    messagebox.showinfo("Success", f"Feed '{name}' added. Remember to File > Save to keep changes.", parent=parent_win)
+    messagebox.showinfo("Success", f"Feed '{name}' added to Row {row}. Remember to File > Save to keep changes.", parent=parent_win)
 
 def edit_feed(listbox, refresh_listbox, button_frame, scrollable_frame, parent_win):
     """Edit existing feed (updates memory only)."""
     try:
         idx = listbox.curselection()[0]
         item = listbox.get(idx)
+        # Parse: "Name [Row X]: URL"
         parts = item.split(": ", 1)
         if len(parts) != 2:
             raise ValueError("Invalid listbox item")
 
-        old_name, old_url = parts[0].strip(), parts[1].strip()
+        name_and_row, old_url = parts[0].strip(), parts[1].strip()
+        old_name = name_and_row.split(" [")[0]
+        
+        # Get current feed data
+        current_index = get_feed_list_index_by_name(old_name)
+        if current_index == -1:
+            return
+        old_name, old_url, old_row = config.CURRENT_FEEDS[current_index]
 
         new_name = simpledialog.askstring(
             "Edit Feed Name", f"Enter new name for '{old_name}':",
@@ -214,27 +278,31 @@ def edit_feed(listbox, refresh_listbox, button_frame, scrollable_frame, parent_w
             initialvalue=old_url, parent=parent_win,
         )
         if not new_url: return
+        
+        new_row = simpledialog.askinteger(
+            "Edit Row", f"Enter row (1, 2, or 3):",
+            initialvalue=old_row, parent=parent_win,
+            minvalue=1, maxvalue=3
+        )
+        if new_row is None:
+            new_row = old_row
 
         new_name = new_name.strip()
         new_url = new_url.strip()
 
-        existing_names = [n for n, u in config.CURRENT_FEEDS if n != old_name]
+        existing_names = [n for n, u, r in config.CURRENT_FEEDS if n != old_name]
         if new_name in existing_names:
             messagebox.showwarning("Warning", f"A feed named '{new_name}' already exists.", parent=parent_win)
             return
 
         if old_url != new_url:
-            # Removed: messagebox.showinfo("Validating", "Validating feed URL...", parent=parent_win)
             valid, error_msg = rss.validate_feed(new_url)
             if not valid:
                 messagebox.showerror("Invalid Feed", f"Validation failed:\n{error_msg}", parent=parent_win)
                 return
 
-        current_index = get_feed_list_index_by_name(old_name)
-        if current_index == -1: return
-
         was_active = old_url == config.ACTIVE_FEED_URL
-        config.CURRENT_FEEDS[current_index] = (new_name, new_url)
+        config.CURRENT_FEEDS[current_index] = (new_name, new_url, new_row)
 
         if old_url != new_url and old_url in config.ALL_ARTICLES:
             config.ALL_ARTICLES[new_url] = config.ALL_ARTICLES.pop(old_url)
@@ -259,7 +327,7 @@ def remove_feed(listbox, refresh_listbox, button_frame, scrollable_frame, parent
     try:
         idx = listbox.curselection()[0]
         item = listbox.get(idx)
-        name = item.split(":")[0].strip()
+        name = item.split(":")[0].strip().split(" [")[0]
         current_index = get_feed_list_index_by_name(name)
 
         if current_index != -1 and messagebox.askyesno("Confirm", f"Remove '{name}'?", parent=parent_win):

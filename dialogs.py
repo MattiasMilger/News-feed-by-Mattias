@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, scrolledtext
 import config
 import themes
 import rss
@@ -16,7 +16,7 @@ def move_feed(listbox, refresh_listbox, direction, button_frame, scrollable_fram
     try:
         idx = listbox.curselection()[0]
         item = listbox.get(idx)
-        name = item.split(":")[0].strip().split(" [")[0]  # Extract name before row indicator
+        name = item.split(":")[0].strip().split(" [")[0].split(" 🔗")[0]  # Extract name before indicators
         
         current_index = get_feed_list_index_by_name(name)
         
@@ -49,7 +49,7 @@ def change_feed_row(listbox, refresh_listbox, button_frame, scrollable_frame, pa
     try:
         idx = listbox.curselection()[0]
         item = listbox.get(idx)
-        name = item.split(":")[0].strip().split(" [")[0]
+        name = item.split(":")[0].strip().split(" [")[0].split(" 🔗")[0]
         
         current_index = get_feed_list_index_by_name(name)
         if current_index == -1:
@@ -142,7 +142,10 @@ def feed_manager_window(button_frame, scrollable_frame):
     def populate_listbox():
         feed_listbox.delete(0, tk.END)
         for name, url, row in config.CURRENT_FEEDS:
-            feed_listbox.insert(tk.END, f"{name} [Row {row}]: {url}")
+            # Check if this is an amalgamated feed (multiple URLs)
+            url_count = len(rss.parse_feed_urls(url))
+            amalgam_indicator = f" 🔗{url_count}" if url_count > 1 else ""
+            feed_listbox.insert(tk.END, f"{name}{amalgam_indicator} [Row {row}]: {url}")
 
     # Controls - Changed to UP/DOWN
     move_ctrl = tk.Frame(frame, bg=theme["frame_bg"])
@@ -203,16 +206,62 @@ def feed_manager_window(button_frame, scrollable_frame):
     themes.apply_theme_to_widget(manager_root, config.CURRENT_THEME)
 
 def add_feed(refresh_listbox, button_frame, scrollable_frame, parent_win):
-    """Add new feed with validation (updates memory only)."""
+    """Add new feed with validation (updates memory only). Supports amalgamated feeds."""
     name = simpledialog.askstring(
         "Add Feed", "Enter the Category Name (e.g., Tech News):", parent=parent_win
     )
     if not name:
         return
 
-    url = simpledialog.askstring(
-        "Add Feed", f"Enter the RSS URL for {name}:", parent=parent_win
+    # Use a Text widget for multi-line URL input
+    url_dialog = tk.Toplevel(parent_win)
+    url_dialog.title("Add Feed URL(s)")
+    url_dialog.geometry("500x250")
+    url_dialog.transient(parent_win)
+    url_dialog.grab_set()
+    
+    theme = themes.THEMES[config.CURRENT_THEME]
+    url_dialog.configure(bg=theme["bg"])
+    
+    frame = tk.Frame(url_dialog, bg=theme["frame_bg"], padx=15, pady=15)
+    frame.pack(fill="both", expand=True)
+    
+    tk.Label(
+        frame, 
+        text=f"Enter RSS URL(s) for {name}:\n(Separate multiple URLs with commas for amalgamation)",
+        font=("Arial", 10),
+        bg=theme["frame_bg"],
+        fg=theme["fg"],
+        justify="left"
+    ).pack(pady=(0, 5))
+    
+    url_text = scrolledtext.ScrolledText(
+        frame,
+        height=6,
+        width=60,
+        bg=theme["entry_bg"],
+        fg=theme["entry_fg"],
+        insertbackground=theme["fg"],
+        wrap=tk.WORD
     )
+    url_text.pack(fill="both", expand=True, pady=5)
+    url_text.focus()
+    
+    result = {"url": None}
+    
+    def submit_urls():
+        result["url"] = url_text.get("1.0", tk.END).strip()
+        url_dialog.destroy()
+    
+    button_frame_dialog = tk.Frame(frame, bg=theme["frame_bg"])
+    button_frame_dialog.pack(pady=10)
+    
+    ttk.Button(button_frame_dialog, text="OK", command=submit_urls).pack(side="left", padx=5)
+    ttk.Button(button_frame_dialog, text="Cancel", command=url_dialog.destroy).pack(side="left", padx=5)
+    
+    url_dialog.wait_window()
+    
+    url = result["url"]
     if not url:
         return
 
@@ -246,20 +295,23 @@ def add_feed(refresh_listbox, button_frame, scrollable_frame, parent_win):
     refresh_listbox()
     from widgets import update_category_buttons
     update_category_buttons(button_frame, scrollable_frame)
-    messagebox.showinfo("Success", f"Feed '{name}' added to Row {row}. Remember to File > Save to keep changes.", parent=parent_win)
+    
+    url_count = len(rss.parse_feed_urls(url))
+    amalgam_msg = f" (Amalgamated from {url_count} sources)" if url_count > 1 else ""
+    messagebox.showinfo("Success", f"Feed '{name}' added to Row {row}{amalgam_msg}. Remember to File > Save to keep changes.", parent=parent_win)
 
 def edit_feed(listbox, refresh_listbox, button_frame, scrollable_frame, parent_win):
-    """Edit existing feed (updates memory only)."""
+    """Edit existing feed (updates memory only). Supports amalgamated feeds."""
     try:
         idx = listbox.curselection()[0]
         item = listbox.get(idx)
-        # Parse: "Name [Row X]: URL"
+        # Parse: "Name 🔗N [Row X]: URL"
         parts = item.split(": ", 1)
         if len(parts) != 2:
             raise ValueError("Invalid listbox item")
 
         name_and_row, old_url = parts[0].strip(), parts[1].strip()
-        old_name = name_and_row.split(" [")[0]
+        old_name = name_and_row.split(" [")[0].split(" 🔗")[0]
         
         # Get current feed data
         current_index = get_feed_list_index_by_name(old_name)
@@ -273,10 +325,56 @@ def edit_feed(listbox, refresh_listbox, button_frame, scrollable_frame, parent_w
         )
         if not new_name: return
 
-        new_url = simpledialog.askstring(
-            "Edit RSS URL", f"Enter new URL for '{new_name}':",
-            initialvalue=old_url, parent=parent_win,
+        # Use a Text widget for multi-line URL input
+        url_dialog = tk.Toplevel(parent_win)
+        url_dialog.title("Edit Feed URL(s)")
+        url_dialog.geometry("500x250")
+        url_dialog.transient(parent_win)
+        url_dialog.grab_set()
+        
+        theme = themes.THEMES[config.CURRENT_THEME]
+        url_dialog.configure(bg=theme["bg"])
+        
+        frame = tk.Frame(url_dialog, bg=theme["frame_bg"], padx=15, pady=15)
+        frame.pack(fill="both", expand=True)
+        
+        tk.Label(
+            frame, 
+            text=f"Enter RSS URL(s) for {new_name}:\n(Separate multiple URLs with commas for amalgamation)",
+            font=("Arial", 10),
+            bg=theme["frame_bg"],
+            fg=theme["fg"],
+            justify="left"
+        ).pack(pady=(0, 5))
+        
+        url_text = scrolledtext.ScrolledText(
+            frame,
+            height=6,
+            width=60,
+            bg=theme["entry_bg"],
+            fg=theme["entry_fg"],
+            insertbackground=theme["fg"],
+            wrap=tk.WORD
         )
+        url_text.pack(fill="both", expand=True, pady=5)
+        url_text.insert("1.0", old_url)
+        url_text.focus()
+        
+        result = {"url": None}
+        
+        def submit_urls():
+            result["url"] = url_text.get("1.0", tk.END).strip()
+            url_dialog.destroy()
+        
+        button_frame_dialog = tk.Frame(frame, bg=theme["frame_bg"])
+        button_frame_dialog.pack(pady=10)
+        
+        ttk.Button(button_frame_dialog, text="OK", command=submit_urls).pack(side="left", padx=5)
+        ttk.Button(button_frame_dialog, text="Cancel", command=url_dialog.destroy).pack(side="left", padx=5)
+        
+        url_dialog.wait_window()
+        
+        new_url = result["url"]
         if not new_url: return
         
         new_row = simpledialog.askinteger(
@@ -327,7 +425,7 @@ def remove_feed(listbox, refresh_listbox, button_frame, scrollable_frame, parent
     try:
         idx = listbox.curselection()[0]
         item = listbox.get(idx)
-        name = item.split(":")[0].strip().split(" [")[0]
+        name = item.split(":")[0].strip().split(" [")[0].split(" 🔗")[0]
         current_index = get_feed_list_index_by_name(name)
 
         if current_index != -1 and messagebox.askyesno("Confirm", f"Remove '{name}'?", parent=parent_win):

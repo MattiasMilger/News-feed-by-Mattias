@@ -45,6 +45,10 @@ def display_page(container, category_name, feed_url, page_number):
     end_index = start_index + config.ARTICLES_PER_PAGE
     entries_to_display = entries[start_index:end_index]
 
+    # Check if this is an amalgamated feed
+    url_count = len(rss.parse_feed_urls(feed_url))
+    is_amalgamated = url_count > 1
+
     page_text = f" (Page {page_number} of {total_pages})" if total_pages > 1 else ""
     header_label = tk.Label(
         container,
@@ -64,9 +68,39 @@ def display_page(container, category_name, feed_url, page_number):
         link = entry.get("link", "#")
         summary_text = entry.get("summary", entry.get("description", ""))
         summary = (summary_text.split(".")[0] + "...") if summary_text else ""
+        
+        # Get source domain if available (for amalgamated feeds)
+        source_domain = getattr(entry, '_source_domain', None)
 
-        hl = tk.Label(container, text=headline, wraplength=550, font=("Arial", 10, "bold"), cursor="hand2", fg=theme["headline_fg"], bg=theme["frame_bg"], anchor="w", justify="left")
-        hl.pack(anchor="w", padx=15, pady=(5, 0), fill="x")
+        # Create headline with optional source indicator
+        headline_frame = tk.Frame(container, bg=theme["frame_bg"])
+        headline_frame.pack(anchor="w", padx=15, pady=(5, 0), fill="x")
+        
+        hl = tk.Label(
+            headline_frame, 
+            text=headline, 
+            wraplength=500, 
+            font=("Arial", 10, "bold"), 
+            cursor="hand2", 
+            fg=theme["headline_fg"], 
+            bg=theme["frame_bg"], 
+            anchor="w", 
+            justify="left"
+        )
+        hl.pack(side="left", fill="x", expand=True)
+        
+        # Show source discreetly for amalgamated feeds only
+        if is_amalgamated and source_domain:
+            source_label = tk.Label(
+                headline_frame,
+                text=f"[{source_domain}]",
+                font=("Arial", 8, "italic"),
+                fg=theme["summary_fg"],
+                bg=theme["frame_bg"],
+                anchor="e"
+            )
+            source_label.pack(side="right", padx=(5, 0))
+        
         sl = tk.Label(container, text=summary, wraplength=550, font=("Arial", 9, "italic"), fg=theme["summary_fg"], bg=theme["frame_bg"], anchor="w", justify="left")
         sl.pack(anchor="w", padx=15, pady=(0, 2), fill="x")
 

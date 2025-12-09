@@ -22,7 +22,7 @@ THEMES = {
         "menu_fg": "#000000",
         "menu_active_bg": "#EDE7F6",
         "error_fg": "#D32F2F",
-        "highlight_bg": "#FFA726"
+        "search_bg": "#FFA726"
     },
     "dark": {
         "bg": "#1E1E1E",
@@ -44,7 +44,7 @@ THEMES = {
         "menu_fg": "#E0E0E0",
         "menu_active_bg": "#3E3E42",
         "error_fg": "#FF6B6B",
-        "highlight_bg": "#FFA726"
+        "search_bg": "#FFA726"
     }
 }
 

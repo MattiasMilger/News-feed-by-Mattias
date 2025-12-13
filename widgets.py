@@ -99,7 +99,6 @@ def display_page(container, category_name, feed_url, page_number):
             headline_frame,
             wrap="word",
             height=2,
-            width=60,
             bg=theme["frame_bg"],
             fg=theme["headline_fg"],
             font=("Arial", 10, "bold"),
@@ -126,7 +125,6 @@ def display_page(container, category_name, feed_url, page_number):
             container,
             wrap="word",
             height=3,
-            width=70,
             bg=theme["frame_bg"],
             fg=theme["summary_fg"],
             font=("Arial", 9, "italic"),
@@ -236,6 +234,8 @@ def update_category_buttons(button_frame, scrollable_frame):
             button_container.bind("<Configure>", lambda e, c=canvas: c.configure(scrollregion=c.bbox("all")))
             canvas.create_window((0, 0), window=button_container, anchor="nw")
             canvas.configure(xscrollcommand=scrollbar.set)
+            canvas.pack(side="top", fill="both", expand=True)
+            scrollbar.pack(side="bottom", fill="x")
 
             def _on_mouse_wheel(event, c=canvas):
                 if getattr(event, "delta", 0) < 0:
@@ -243,9 +243,6 @@ def update_category_buttons(button_frame, scrollable_frame):
                 elif getattr(event, "delta", 0) > 0:
                     c.xview_scroll(-1, "units")
             canvas.bind_all("<Shift-MouseWheel>", _on_mouse_wheel)
-
-            canvas.pack(side="top", fill="both", expand=True)
-            scrollbar.pack(side="bottom", fill="x")
 
             for name, url, _ in feeds_by_row[row_num]:
                 ttk.Button(
@@ -340,7 +337,8 @@ def setup_gui():
     config.load_config()
     config.ROOT = tk.Tk()
     config.ROOT.title("News Feed by Mattias")
-    config.ROOT.geometry("700x700")
+    config.ROOT.geometry("1000x800")
+    config.ROOT.minsize(900, 700)
     config.ROOT.protocol("WM_DELETE_WINDOW", on_exit)
 
     themes.configure_ttk_theme(config.CURRENT_THEME)
@@ -357,19 +355,20 @@ def setup_gui():
 
     config.WEATHER_LABEL = tk.Label(header_frame, text="Loading weather...", font=("Arial", 10, "italic"), bg=theme["frame_bg"], fg=theme["fg"])
     config.WEATHER_LABEL.pack(side="right")
-    utils.update_weather_display()
 
     config.SEARCH_TERM = tk.StringVar()
-    search_entry = ttk.Entry(header_frame, textvariable=config.SEARCH_TERM, width=20)
+    search_entry = ttk.Entry(header_frame, textvariable=config.SEARCH_TERM, width=30)
     search_entry.pack(side="right", padx=(10, 5))
     search_entry.insert(0, "Search...")
-    search_entry.bind("<FocusIn>", lambda e: search_entry.delete(0, "end"))
+    search_entry.bind("<FocusIn>", lambda e: search_entry.delete(0, "end") if search_entry.get() == "Search..." else None)
     search_entry.bind("<KeyRelease>", lambda e: display_page(
         config.ACTIVE_FEED_CONTAINER,
         "Feed",
         config.ACTIVE_FEED_URL,
         config.CURRENT_PAGE
     ) if config.ACTIVE_FEED_URL else None)
+    
+    utils.update_weather_display()
 
     menubar = tk.Menu(config.ROOT, bg=theme["menu_bg"], fg=theme["menu_fg"])
     config.ROOT.config(menu=menubar)
@@ -427,7 +426,7 @@ def setup_gui():
     button_frame.pack(fill="x", padx=10, pady=(5, 5))
 
     main_frame = tk.Frame(config.ROOT, bg=theme["bg"])
-    main_frame.pack(fill="both", expand=True, padx=10)
+    main_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     canvas = tk.Canvas(main_frame, bg=theme["canvas_bg"], highlightthickness=0)
     scrollable_frame = tk.Frame(canvas, bg=theme["frame_bg"])

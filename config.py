@@ -1,12 +1,81 @@
 import json
 import os
 
+# Configuration file
 CONFIG_FILE = "rss_config.json"
 
+# Application Constants
+MAX_ROWS = 10
+MIN_ROW = 1
+DEFAULT_ROW = 1
+MAX_ENTRIES_PER_FEED = 100
+ARTICLES_PER_PAGE = 12
+FEED_FETCH_TIMEOUT = 10
+REFRESH_INTERVAL_MS = 300000  # 5 minutes
+MAX_PAGE_BUTTONS = 5
+
+# Text Display Constants
+HEADLINE_TEXT_HEIGHT = 2
+SUMMARY_TEXT_HEIGHT = 3
+HEADLINE_FONT_SIZE = 10
+SUMMARY_FONT_SIZE = 9
+HEADER_FONT_SIZE = 12
+DATETIME_FONT_SIZE = 10
+LOCATION_FONT_SIZE = 10
+
+# UI Spacing Constants
+BUTTON_PADDING = 8
+BUTTON_FONT_SIZE = 10
+HORIZONTAL_ROW_HEIGHT = 40
+SEARCH_ENTRY_WIDTH = 30
+REFRESH_BUTTON_WIDTH = 8
+
+# Window Geometry Constants
+MAIN_WINDOW_WIDTH = 1000
+MAIN_WINDOW_HEIGHT = 800
+MIN_WINDOW_WIDTH = 900
+MIN_WINDOW_HEIGHT = 700
+FEED_MANAGER_WIDTH = 650
+FEED_MANAGER_HEIGHT = 450
+FEED_MANAGER_MIN_WIDTH = 650
+FEED_MANAGER_MIN_HEIGHT = 450
+LOCATION_MANAGER_WIDTH = 450
+LOCATION_MANAGER_HEIGHT = 400
+URL_DIALOG_WIDTH = 500
+URL_DIALOG_HEIGHT = 250
+NEW_LIST_DIALOG_WIDTH = 350
+NEW_LIST_DIALOG_HEIGHT = 250
+OPEN_LIST_DIALOG_WIDTH = 300
+OPEN_LIST_DIALOG_HEIGHT = 400
+DELETE_LIST_DIALOG_WIDTH = 300
+DELETE_LIST_DIALOG_HEIGHT = 400
+
+# URL Input Dialog Constants
+URL_TEXT_HEIGHT = 6
+URL_TEXT_WIDTH = 60
+
+# Padding Constants
+DIALOG_PADDING = 15
+FRAME_PADDING_X = 10
+FRAME_PADDING_Y = 10
+HEADER_PADDING_X = 10
+HEADER_PADDING_Y = 5
+BUTTON_ROW_PADDING = 3
+BUTTON_ROW_MARGIN = 5
+
+# UI Update Intervals
+DATETIME_UPDATE_INTERVAL_MS = 1000  # 1 second
+CANVAS_UPDATE_DELAY_MS = 50
+
+# Unicode Characters (fixing encoding issues)
+LINK_EMOJI = "🔗"
+LOCATION_EMOJI = "📍"
+
+# Default Feeds
 DEFAULT_FEEDS = [
-    ("Technology", "https://techcrunch.com/feed/", 1),
-    ("Finance", "https://www.valuewalk.com/feed", 1),
-    ("World", "http://feeds.bbci.co.uk/news/world/rss.xml", 1)
+    ("Technology", "https://techcrunch.com/feed/", DEFAULT_ROW),
+    ("Finance", "https://www.valuewalk.com/feed", DEFAULT_ROW),
+    ("World", "http://feeds.bbci.co.uk/news/world/rss.xml", DEFAULT_ROW)
 ]
 
 # Runtime state
@@ -21,6 +90,7 @@ ROOT = None
 FEED_MANAGER_WINDOW = None
 LOCATION_MANAGER_WINDOW = None
 
+# Weather/Location defaults
 DEFAULT_LOCATIONS = [
     "Stockholm, SE", "London, UK", "New York, US", "Tokyo, JP",
     "Berlin, DE", "Sydney, AU", "Uppsala, SE", "Gothenburg, SE",
@@ -30,13 +100,13 @@ CURRENT_WEATHER_LOCATION = "Stockholm, SE"
 DATETIME_LABEL = None
 WEATHER_LABEL = None
 
+# Active feed tracking
 ACTIVE_FEED_URL = None
 ACTIVE_FEED_CONTAINER = None
-REFRESH_INTERVAL_MS = 300000  # 5 minutes
 
+# Article cache and pagination
 ALL_ARTICLES = {}
 CURRENT_PAGE = 1
-ARTICLES_PER_PAGE = 12
 
 def load_config():
     global SAVED_LISTS, CURRENT_FEEDS, DEFAULT_LIST_NAME, ACTIVE_LIST_NAME, CURRENT_THEME, CURRENT_WEATHER_LOCATION, DEFAULT_LOCATIONS
@@ -61,19 +131,19 @@ def load_config():
         if isinstance(feeds, dict):
             # Old format: dict
             for name, url in feeds.items():
-                new_feeds.append((name, url, 1))  # Default to row 1
+                new_feeds.append((name, url, DEFAULT_ROW))
         elif isinstance(feeds, list):
             for item in feeds:
                 if isinstance(item, (list, tuple)):
                     if len(item) == 2:
                         # Old format: (name, url)
-                        new_feeds.append((item[0], item[1], 1))
+                        new_feeds.append((item[0], item[1], DEFAULT_ROW))
                     elif len(item) == 3:
                         # New format: (name, url, row)
                         new_feeds.append((item[0], item[1], item[2]))
                 elif isinstance(item, dict):
                     for k, v in item.items():
-                        new_feeds.append((k, v, 1))
+                        new_feeds.append((k, v, DEFAULT_ROW))
         
         SAVED_LISTS[list_name] = new_feeds
 

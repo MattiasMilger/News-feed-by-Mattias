@@ -1,5 +1,6 @@
 import tkinter as tk
 import tkinter.ttk as ttk
+import config
 
 THEMES = {
     "light": {
@@ -62,8 +63,8 @@ def configure_ttk_theme(current_theme_name):
                     foreground=theme["button_fg"],
                     borderwidth=1,
                     focuscolor=theme["button_bg"],
-                    font=("Arial", 10, "bold"),
-                    padding=8)
+                    font=("Arial", config.BUTTON_FONT_SIZE, "bold"),
+                    padding=config.BUTTON_PADDING)
     
     # Map states for TButton
     style.map("TButton",
